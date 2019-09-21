@@ -74,8 +74,11 @@ y_lm <- train(y ~ x1 + x2, data = x_combined, method = 'lm', trControl = trCtrl)
 summary(y_lm)
 
 
+y_lm_1 <- train(y ~ x1, data = x_combined, method = 'lm', trControl = trCtrl)
+summary(y_lm_1)
 
-
+y_lm_2 <- train(y ~ x2, data = x_combined, method = 'lm', trControl = trCtrl)
+summary(y_lm_2)
 
 
 
