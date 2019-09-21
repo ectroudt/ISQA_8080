@@ -57,14 +57,16 @@ predict(lm_carSeat_2, newdata = data.frame(Price=120, Urban='Yes', US='Yes'))
 
 library(ggplot2)
 
+# Create simulated data set
 set.seed(1)
 x1 <- runif(100)
 x2 <- 0.5 * x1 + rnorm(100)/10
 y <- 2 + 2 * x1 + 0.3 * x2 + rnorm(100)
 
-
+# generate dataframe out of each list of values
 x_combined <- data.frame(x1, x2, y)
 
+# Determine extent of correlation amongst x1 and x2
 x_corr <- cor(x_combined$x1, x_combined$x2, method = 'pearson')
 ggplot(data = x_combined, aes(x = x1, y = x2)) + geom_point() + xlab("x1") + ylab ("x2") + geom_smooth(method='lm')
 
