@@ -1,0 +1,91 @@
+---
+title: "ISQA_8080 Assignment 1"
+author: "Eric Troudt"
+date: "September 13, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r Question 1}
+
+#load libraries
+library(caret)
+library(ggfortify)
+library(ISLR)
+
+# load dataset and set trainControl
+carSeat_data <- Carseats
+trCtrl <- trainControl(method = 'none')
+
+# generate mtple reg model
+lm_carSeat <- train(Sales ~ Price + Urban + US, data = carSeat_data, method = 'lm', trControl = trCtrl)
+summary(lm_carSeat)
+
+# how are qualitative predictors encoded by R
+contrasts(carSeat_data$Urban)
+contrasts(carSeat_data$US)
+
+# generate model without Urban variable
+lm_carSeat_2 <- train(Sales ~ Price + US, data = carSeat_data, method = 'lm', trControl = trCtrl)
+summary(lm_carSeat_2)
+
+# calculate RMSE for each model
+Rmse_2 <- RMSE(pred = lm_carSeat_2$finalModel$fitted.values, carSeat_data[['Sales']])
+Rmse <- RMSE(pred = lm_carSeat$finalModel$fitted.values, carSeat_data[['Sales']])
+
+# create diagnostic plots
+autoplot(lm_carSeat_2$finalModel)
+
+
+# generate 95% conf int
+confint(lm_carSeat_2$finalModel)
+
+# predict sales for given test data
+predict(lm_carSeat_2, newdata = data.frame(Price=120, Urban='Yes', US='Yes'))
+```
+
+```{r Question 2}
+
+library(ggplot2)
+
+set.seed(1)
+x1 <- runif(100)
+x2 <- 0.5 * x1 + rnorm(100)/10
+y <- 2 + 2 * x1 + 0.3 * x2 + rnorm(100)
+
+
+x_combined <- data.frame(x1, x2, y)
+
+x_corr <- cor(x_combined$x1, x_combined$x2, method = 'pearson')
+ggplot(data = x_combined, aes(x = x1, y = x2)) + geom_point() + xlab("x1") + ylab ("x2") + geom_smooth(method='lm')
+
+y_lm <- train(y ~ x1 + x2, data = x_combined, method = 'lm', trControl = trCtrl)
+summary(y_lm)
+
+
+
+
+
+
+
+```
+
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

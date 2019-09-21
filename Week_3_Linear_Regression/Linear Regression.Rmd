@@ -1,0 +1,237 @@
+---
+title: "Linear Regression"
+author: "Dr. Christian Haas"
+date: "August 28, 2019"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# R Linear Regression
+
+This is an overview of how to run and analyze linear regression in R. We will cover simple linear regression, multiple regression, analysis of assumptions, and including qualitative predictors.
+
+## Simple Linear Regression
+
+Simple Linear Regression is the simplest form of regression. It consists of one predictor variable x and one target variable y.
+
+The 'lm' function in R is used to calculate both simple and multiple linear regression models if y is a numerical/continuous/quantitative variable.
+
+On another note: We will start using the tidyverse packages to build clean and reproducible data 'pipelines', as well as the caret package to use a consistent interface for machine learning tasks. While we only use the full functionality of caret in later sections (e.g., resampling techniques), the general processes are the same: prepare/pre-process the data, define the model, train the model, evaluate the model.
+
+```{r simple regression}
+# first, load some required libraries
+library(MASS) # large collection of data sets and functions
+library(ISLR)
+library(ggplot2)
+
+# we also load a package for a systematic and clean interface to build machine learning models
+library(caret)
+library(tidyverse)
+
+# Simple Linear Regression
+
+dataset <- Boston # Boston is a pre-loaded dataset provided by the MASS package
+
+# print out the column names of the data set
+names(dataset)
+
+# as it's an imported data set from the MASS library, we can use following command to get additional information about the variables
+?Boston
+
+# let's build a simple linear regression model.
+# we want to see if the variable lstat (x, lower status of the population) significantly affects medv (y, median home value)
+# we use the caret package functionality. you will see in later sections that this will make it much easier to specify additional steps in model training and evaluation
+# we also introduce the trainControl parameter which lets us set a resampling strategy. for now, we use 'none'
+
+target_var <- 'medv'
+
+trControl <- trainControl(method = 'none')
+
+lm_fit <- train(medv ~ lstat, data = dataset, method = 'lm', trControl = trControl)
+
+# calling the summary function on the lm object will give you the basic regression output
+summary(lm_fit)
+lm_fit$finalModel
+
+# to get the names and coefficients of the output lm model, use these functions
+names(lm_fit$finalModel)
+coef(lm_fit$finalModel)
+
+# we can get the MSE and RMSE from the model output:
+RMSE <- RMSE(pred = lm_fit$finalModel$fitted.values, obs = dataset[[target_var]])
+MSE <- RMSE^2
+R2 <- R2(pred = lm_fit$finalModel$fitted.values, obs = dataset[[target_var]])
+R2_lm <- summary(lm_fit$finalModel)$r.squared
+# a note: caret uses a slightly different version to calculate R2, namely it calculates the correlation between observed and predicted values and squares this correlation r. this can lead to slight differences in R2 compared to what we're used to from the lm() models. However, for all intents and purposes of this class, we don't need to worry about these small differences
+
+# to get the confidence intervals for the parameters, you can use the confint functions
+confint(lm_fit$finalModel)
+
+## Prediction on new data
+# we can predict the regression output for new values of x by using the generic 'predict' function 
+predict(lm_fit, newdata = data.frame(lstat=(c(5,10,15))))
+
+# sidenote: note that when we want to predict new data points, we have to distinguish between confidence intervals 
+predict(lm_fit$finalModel, newdata = data.frame(lstat=(c(5,10,15))), interval="confidence") # confidence is the for actual values of the parameters
+predict(lm_fit$finalModel, newdata = data.frame(lstat=(c(5,10,15))), interval="prediction") # prediction intervals are larger than confidence intervals, as we have additional uncertainty when predicting new data
+
+
+## let's use some graphical plots
+
+# start with a simple scatterplot and a regression line. Use ggplot for nicer graphs 
+dataset %>% ggplot(aes(x = lstat, y = medv)) + geom_point() + xlab("Lower Status") + ylab ("Median House Value")
+
+
+dataset %>% ggplot(aes(x = lstat, y = medv)) + geom_point() + xlab("Lower Status") + ylab ("Median House Value") + geom_smooth(method='lm')
+
+# to plot the relevant diagnostics plots, use the plot function on the lm object
+plot(lm_fit$finalModel)
+
+# a bit nicer:
+library(ggfortify)
+autoplot(lm_fit$finalModel)
+
+
+```
+
+## Extension to Multiple Linear Regression
+
+In R, extending a simple to a multiple regression is easy. We simply include additional predictor variables in our model formulation.
+
+Note that '.' can be used to indicate all the columns that are not explicitly specified. This can be helpful when working with data sets with many columns, at least if all of them need to be included as predictor variables.
+
+```{r multiple regression}
+# build a model with 2 predictors
+trControl <- trainControl(method = 'none')
+
+lm_fit <- train(medv ~ lstat + age, data = dataset, method = 'lm', trControl = trControl)
+summary(lm_fit)
+
+# build a model using all columns other than 'med' as predictor variables
+lm_fit <- train(medv ~ . , data = dataset, method = 'lm', trControl = trControl)
+summary(lm_fit)
+
+# we can also use the vif (variance inflation factor) function to see which predictors have the most influence in the regression. the built-in version of varImp() in caret uses the t statistics for regression
+lm_fit_importance <- varImp(lm_fit, scale = FALSE) # scale=TRUE scales everything between 0 and 100, where 100 indicates the highest importance 
+plot(lm_fit_importance)
+
+lm_fit_importance <- varImp(lm_fit)
+plot(lm_fit_importance)
+
+# if we want to manually exclude a non-significant variable, we can do it as follows:
+lm_fit1 <- train(medv ~ . -age , data = dataset, method = 'lm', trControl = trControl) # re-run without the age variable
+summary(lm_fit1)
+
+# Interaction Terms
+
+# we can include interaction terms between two variables by using * instead of +
+summary(train(medv ~ lstat:age, data = dataset, method = 'lm', trControl = trControl))
+```
+
+## In-class Exercise 1:
+
+We are going to build a regression model using the WinPercentage as dependent variable and the other two variables OffPassYds and DefYds as predictor variables.
+
+```{r exercise 1}
+setwd("select your working directory")
+
+# load the NFl.csv dataset
+
+# build a regression model as described above
+
+# which variables, if any, are significant? how much variance is explained by the model?
+
+# plot the diagnostic plots. Do you see any issues?
+
+```
+
+
+
+## Non-linear Transformations
+
+An easy way to use regression for non-linear applications is through transformations of the input data. Two common transformations are polynomial or logarithmic transformations.
+
+```{r non-linear transformations}
+# Non-linear Transformations of the Predictors
+
+# to inlude polynomial terms, we can use the I() function
+lm_fit2 <- train(medv ~ lstat + I(lstat^2), data = dataset, method = 'lm', trControl = trControl)
+m_fit2 <- train(medv ~ poly(lstat, 2, raw =  TRUE), data = dataset, method = 'lm', trControl = trControl)
+summary(lm_fit2)
+
+# we can actually use the anova function to see if adding the quadratic variable significantly decreases the RSS
+lm_fit <- train(medv ~ lstat, data = dataset, method = 'lm', trControl = trControl)
+summary(lm_fit)
+anova(lm_fit$finalModel, lm_fit2$finalModel) # if the result is significant, it means that the models lead to significantly different explained variances
+
+# plot the diagnostics
+autoplot(lm_fit2$finalModel)
+
+
+# alternative formulation for higher-level polynomials
+lm_fit5 <- train(medv ~ poly(lstat, 5, raw = TRUE), data = dataset, method = 'lm', trControl = trControl)
+
+summary(train(medv ~ poly(lstat, 2, raw = TRUE), data = dataset, method = 'lm', trControl = trControl))
+
+summary(lm_fit5)
+
+# last but not least, the logarithmic transformation is often useful for non-linear variables
+summary(train(medv ~ log(rm),data = dataset, method= 'lm'))
+
+# we can plot the models and compare them
+Boston %>% ggplot(mapping = aes(x = medv, y = lstat)) + geom_point() + 
+  geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x) +
+  geom_smooth(method = "lm", se=FALSE, color="blue", formula = y ~ poly(x, 2, raw = TRUE)) +
+  geom_smooth(method = "lm", se=FALSE, color="red", formula = y ~ poly(x, 5, raw = TRUE)) +
+  geom_smooth(method = "lm", se=FALSE, color="green", formula = y ~ log(x)) 
+  
+
+```
+
+## Including qualitative predictors
+
+So far, the examples only included quantiative predictors. It is easy to include categorial predictors in our regression models as well. All we need to be aware of is that k - 1 dummy variables are created if our categorical predictor has k levels. R will select one of the levels as baseline unless a specific level is manually specified. 
+
+```{r}
+library(ISLR)
+
+# load the Carseats data from the ISLR package
+data("Carseats")
+dataset <- Carseats # bind it to a local environment variable
+
+summary(dataset)
+
+# build a linear regression model including all variables, and two additional interaction variables
+lm_fit <- train(Sales ~ . + Income:Advertising + Price:Age , data = dataset, method = 'lm', trControl = trControl)
+summary(lm_fit)
+
+# to see how R encodes the dummy variables, we can call the contrasts function
+contrasts(dataset$ShelveLoc)
+```
+
+
+## In-class Exercise 2:
+
+We are going to build a regression model using Score (y) as a function of the Price and Type of restaurant.
+
+```{r exercise 2}
+# load the RestaurantRatings.csv dataset
+dataset <- read_csv("RestaurantRatings.csv")
+
+# build a regression model as described above
+
+# which variables, if any, are significant? how much variance is explained by the model?
+
+# plot the diagnostic plots. Do you see any issues?
+
+# try a non-linear transformation on a variable. Does it increase the model performance? Do the diagnostic plots look better now?
+# which variables, if any, are significant? how much variance is explained by the model?
+
+```
+
+
