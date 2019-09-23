@@ -6,16 +6,12 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 ```
 
-## R Markdown
+# __Question 1__ 
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r Question 1}
+```{r Question 1, include=FALSE}
 
 #load libraries
 library(caret)
@@ -25,36 +21,61 @@ library(ISLR)
 # load dataset and set trainControl
 carSeat_data <- Carseats
 trCtrl <- trainControl(method = 'none')
-
-# generate mtple reg model
-lm_carSeat <- train(Sales ~ Price + Urban + US, data = carSeat_data, method = 'lm', trControl = trCtrl)
-summary(lm_carSeat)
-
-# how are qualitative predictors encoded by R
-contrasts(carSeat_data$Urban)
-contrasts(carSeat_data$US)
-
-# generate model without Urban variable
-lm_carSeat_2 <- train(Sales ~ Price + US, data = carSeat_data, method = 'lm', trControl = trCtrl)
-summary(lm_carSeat_2)
-
-# calculate RMSE for each model
-Rmse_2 <- RMSE(pred = lm_carSeat_2$finalModel$fitted.values, carSeat_data[['Sales']])
-Rmse <- RMSE(pred = lm_carSeat$finalModel$fitted.values, carSeat_data[['Sales']])
-
-# create diagnostic plots
-autoplot(lm_carSeat_2$finalModel)
-
-
-# generate 95% conf int
-confint(lm_carSeat_2$finalModel)
-
-# predict sales for given test data
-predict(lm_carSeat_2, newdata = data.frame(Price=120, Urban='Yes', US='Yes'))
 ```
 
-```{r Question 2}
 
+## _Generate multiple regression model for car seat data_
+```{r Multple reg model}
+lm_carSeat <- train(Sales ~ Price + Urban + US, data = carSeat_data, method = 'lm', trControl = trCtrl)
+summary(lm_carSeat)
+```
+
+## _How are qualitative predictors encoded by R?_
+
+Urban variable encoding:
+```{r Urban contrast}
+contrasts(carSeat_data$Urban)
+```
+
+US variable encoding: 
+```{r US contrast}
+contrasts(carSeat_data$US)
+```
+
+## _Generate model without Urban variable_
+```{r Multple reg model without Urban}
+lm_carSeat_2 <- train(Sales ~ Price + US, data = carSeat_data, method = 'lm', trControl = trCtrl)
+summary(lm_carSeat_2)
+```
+
+
+## _What is the Root Mean Square Error for each model?_
+
+The RMSE for the 1st regression model (all variables) is: `r RMSE(pred = lm_carSeat$finalModel$fitted.values, carSeat_data[['Sales']])`  
+
+The RMSE for the 2nd regression model (without Urban variable) is: `r RMSE(pred = lm_carSeat_2$finalModel$fitted.values, carSeat_data[['Sales']])`
+
+
+## _Create diagnostic plots for 2nd regression model_
+```{r Diagnostic plots for 2nd reg model}
+autoplot(lm_carSeat_2$finalModel)
+```
+
+## _Generate 95% confidence interval_
+```{r Conf interval}
+confint(lm_carSeat_2$finalModel)
+```
+
+## _Predict sales for given test data_
+
+The predicted sales when price is 120 will be: `r predict(lm_carSeat_2, newdata = data.frame(Price=120, Urban='Yes', US='Yes'))`
+
+
+# __Question 2__
+## _Create simulated dataset with predictor variables x1 and x2_
+```{r Question 2, include=FALSE}
+
+# load addtl libraries
 library(ggplot2)
 
 # Create simulated data set
@@ -65,32 +86,87 @@ y <- 2 + 2 * x1 + 0.3 * x2 + rnorm(100)
 
 # generate dataframe out of each list of values
 x_combined <- data.frame(x1, x2, y)
+```
 
-# Determine extent of correlation amongst x1 and x2
-x_corr <- cor(x_combined$x1, x_combined$x2, method = 'pearson')
+
+## _Determine extent of correlation amongst x1 and x2_
+
+The correlation coefficient for x1 and x2 is: `r cor(x_combined$x1, x_combined$x2, method = 'pearson')`  
+
+
+```{r Correlation for x1, x2}
 ggplot(data = x_combined, aes(x = x1, y = x2)) + geom_point() + xlab("x1") + ylab ("x2") + geom_smooth(method='lm')
+```
 
+
+## _Generate multiple regression model for y_
+```{r Multiple regression model for y}
 y_lm <- train(y ~ x1 + x2, data = x_combined, method = 'lm', trControl = trCtrl)
 summary(y_lm)
+```
 
 
+## _Generate multiple regression model for y using only x1_
+```{r Multiple regression model with only x1}
 y_lm_1 <- train(y ~ x1, data = x_combined, method = 'lm', trControl = trCtrl)
 summary(y_lm_1)
+```
 
+
+## _Generate multiple regression model for y using only x2_
+```{r Multiple regression model with only x2}
 y_lm_2 <- train(y ~ x2, data = x_combined, method = 'lm', trControl = trCtrl)
 summary(y_lm_2)
-
-
-
 ```
 
 
-## Including Plots
-
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
+## _Modify simulated dataset with an additional observation_
+```{r Modified dataset, include=FALSE}
+x_combined[nrow(x_combined) + 1,] <- c(0.1, 0.8, 6) 
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+number of rows: `r nrow(x_combined)`, with new observation: `r x_combined[101,]`
+
+## _For modified dataset, generate multiple regression model for y_
+```{r Multiple regression model for y using modified dataset}
+y_lm_mod <- train(y ~ x1 + x2, data = x_combined, method = 'lm', trControl = trCtrl)
+summary(y_lm_mod)
+```
+
+## _For modified dataset, generate multiple regression model for y using only x1_
+```{r Multiple regression model with only x1 using modified dataset}
+y_lm_mod_1 <- train(y ~ x1, data = x_combined, method = 'lm', trControl = trCtrl)
+summary(y_lm_mod_1)
+```
+
+## _For modified dataset, generate multiple regression model for y using only x2_
+```{r Multiple regression model with only x2 using modified dataset}
+y_lm_mod_2 <- train(y ~ x2, data = x_combined, method = 'lm', trControl = trCtrl)
+summary(y_lm_mod_2)
+```
+
+## _Create diagnostic plots for new models_
+
+__Modified model (using all variables)__   
+   
+```{r diagnostic plot of mod model}
+autoplot(y_lm_mod$finalModel)
+```
+   
+__2nd Modified model (only x1)__   
+  
+```{r diagnostic plot of mod model with only x1}
+autoplot(y_lm_mod_1$finalModel)
+```
+   
+__3rd Modified model (only x2)__  
+  
+```{r diagnostic plot of mod model with only x2}
+autoplot(y_lm_mod_2$finalModel)
+```
+
+
+
+
+
+
