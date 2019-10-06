@@ -1,0 +1,43 @@
+---
+title: "ISQA_8080 Assignment 2"
+author: "Eric Troudt"
+date: "October 5, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+##__Question 1__
+
+**a.** To determine the average number of observations occurring within an interval of any given value of X, where the interval is 10% of the range of X, the probability of X occurring within that interval must be computed. Since X follows a normal distribution, the area under the curve within the given interval must be computed using either z or t scores. If x is 0.6, then P(0.55 <= X <= 0.65) is the fraction of available observations that can be used for predicting the response value. Multiplying by the total number of observations (n) will provide the average number of values that fall within that interval. 
+
+**b.** If the same question is applied with p = 2, where the additional predictor is also normally distributed, then the same calculation will apply for the interval in X2. If X2 = 0.35, then P(0.30 <= X2<= 0.40) is the fraction of available X2 observations that can be used for predicting the response value. To get the probability of both predictors X1 and X2 occurring within their respective intervals, simply multiply the probability for X1 (from a.) by the probability of X2. This overall probaility can then be multiplied by the total number of observations (n) to determine the number of observations on average that will occur with both X1 and X2 residing in their intervals.
+
+**c**. For the same question, in order to compute the overall probability of each predictor variable occurring within its specified interval, each individual probability must be multiplied together. If p = 5, then Ptotal = P(X1) * P(X2) * P(X3) * P(X4) * P(X5), and likewise this overall probaility can then be multiplied by the total number of observations (n) to determine the number of observations on average that will occur with the p variables residing in their intervals.
+
+**d**. As can be seen, the more predictor variables there are, the smaller the probability of having observations in which each variable occurs within its specified interval. For the KNN approach, this means fewer neighbors (if any at all) within the requisite distance of x0, leading to a drastically decreased model performance once p becomes prohibitively large. The textbook describes this as the ‘curse of dimensionality’ (section 3.5), and emphasizes the use of parametric models when p is large or if there are relatively few observations for each predictor variable.
+
+##__Question 2__
+
+**a**. The sample is split into k equal groups where all but one group are used as training data fitted by the statistical learning method. The excluded group is then utilized as the test data upon which the statistical model is applied, with the prediction error serving as a measure of the test error rate. K-fold CV carries out this process iteratively so that each of the k groups is held out as the test group once around, resulting in k error rates that are then averaged to produce the actual estimate of the test error rate.
+
+**b**. _(Answers based on textbook sections 5.1.2 - 5.1.4)_
+  
+* *The validation set approach?* 
+	  
+	  + __Advantages__: K-fold CV will incorporate far more observations from the sample in the numerous fitting iterations that take place (each fitting process occurs on all observations except those curently being held out as the test data). This provides for less biased estimates of the test error rate compared with validation-set approach, where a much smaller portion of the observations are included in the training data used for fitting, resulting in reduced model performance with relatively larger error rates. Additionally, each of the error rate estimations given by the validation-set approach can exhibit considerable variance for a given sample, since the training data is comprised of a randomly selected portion of the observations that can differ significantly each time the approach is applied.
+	  + __Disadvantages__: Depending on the complexity of the model being used, along with the corresponding sample size, there may be additional computational expense with the k-fold CV approach, since it involves k instances of implementing the model, whereas set-validation only requires one iteration.     
+	  
+* *LOOCV?*   
+	
+	  + __Advantages__: The computational expense associated with LOOCV (n model implementations) is much greater compared with the k implementations carried out using k-fold CV, and therefore k-fold CV will be much less demanding on the computing resources being used The degree of overlap between the different training data-sets used in k-fold CV is less pronounced when compared with the training data-sets applied in LOOCV, all of which are highly similar, only differing by one value (the test data). The high degree of similarity between the n training sets in LOOCV produce highly correlated estimates of the test error rate, resulting in an overall estimate that has higher variance compared with estimate generated using k-fold CV.
+    + __Disadvantages__:
+	While the error rate estimate from k-fold CV has less variance than LOOCV, it also has more bias, since its training data-sets are comprised of a relatively smaller fraction of the sample compared with LOOCV. 
+**Choosing a k-value of 5 or 10 is recommended for effectively balancing out the bias-variance trade-off of the error-rate estimate.
+
+**c**.
+The advantages of using cross-validation on the entire data-set include an estimate of the error-rate that will have relatively low variance and will only require k implementations of each model tested. The generation of an error-rate curve across the different models being tested (and potentially at different levels of k) will allow for selection of the model with a given parameter setting that produces the minimal error rate.
+
+If the sample data is split 80/20 training:test, with cross validation being used on the training data to select the model, it will allow for a ‘fine-tuning’ of the parameters being considered. This leads the estimation of an error-rate that is based on a set of observations that were not involved at all in fitting the model (20% of the split), and therefore will provide a more valid estimate of that model's actual performance. 

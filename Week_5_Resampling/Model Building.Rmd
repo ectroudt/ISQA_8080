@@ -1,0 +1,279 @@
+---
+title: "Model Building"
+author: "Dr. Christian Haas"
+date: "September 18, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Resampling Techniques
+
+This section discusses essential resampling techniques and how they are implemented in R.
+Note that sometimes R packages and methods come with built-in functions for cross-validation.
+However, it is always easy to implement basic CV ourselves.
+
+## Validation Set Approach
+
+Let's start with the validation set approach. If we only split the data two-ways, you will find that some people say 'training-validation', while others colloquially say 'training-test'. For a two-way split, both are equivalent.
+
+If you split it in three parts, we distinguish between training-test-validation. The test set is used to compare different parameterizations of the models built on training data, and the best performing one is then tested against the validation set. 
+
+```{r validation}
+
+# set your working directory to the current file directory 
+tryCatch({
+  setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+  }, error=function(cond){message(paste("cannot change working directory"))
+})
+
+library(ISLR)
+library(caret)
+library(tidyverse)
+
+set.seed(1)
+
+# Let's begin by showing how training-validation/test resampling works on the Auto dataset.
+
+# an easy way of defining training-validation sets is by using indexes
+# here, we create a numeric index of 1 to nrow(Auto), and select 196 of the indexes therein
+
+data <- Auto # load data in memory
+
+target_var <- 'mpg'
+# note: we can specify the formula like this. if you specify individual predictors, they have to match the column names in the dataset
+model_form <- mpg ~ horsepower
+model_type <- "lm"
+
+# we create a data partition (training-test) by specifying our target variable
+train_index <- createDataPartition(y = data[[target_var]], p = 0.5, list = FALSE) # creata a 50-50 split
+
+data_train <- data[train_index,]
+data_test <- data[-train_index,]
+
+# if we want to specify that the model (here: lm) is only trained on the training set, the only thing we need to do is using the created train set
+trControl <- trainControl(method='none') #while a bit counterintuitive, if we manually train on the training data and evaluate on the test data, we don't need additional resampling
+lm_fit <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl)
+
+# let's get calculate the RMSE for the trainig set
+lm_fit_train_rmse <- lm_fit$results$RMSE
+
+# calculate the predictions for the test set
+
+lm_fit_test_pred <- lm_fit %>% predict(newdata = data_test, type = 'raw') # this would be the predictions for the validation/test set
+
+# get performance metrics for the test set predictions
+postResample(pred = lm_fit_test_pred, obs = data_test[[target_var]])
+postResample(pred = lm_fit_test_pred, obs = data_test[[target_var]])['RMSE']
+
+# compare this against a polynomial regression
+model_form <- mpg ~ poly(horsepower, 2)
+lm_fit2 <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl)
+lm_fit2_test_predict <- lm_fit2 %>% predict(newdata = data_test, type = 'raw') # this would be the predictions for the 
+
+model_form <- mpg ~ poly(horsepower, 3)
+lm_fit3 <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl)
+lm_fit3_test_predict <- lm_fit3 %>% predict(newdata = data_test, type = 'raw') # this would be the predictions for the 
+
+postResample(pred = lm_fit2_test_predict, obs = data_test[[target_var]])
+postResample(pred = lm_fit3_test_predict, obs = data_test[[target_var]])
+
+```
+
+## Leave-one-out Cross Validation
+
+Now, let's look at Leave-one-out cross validation. In this case, we always use n-1 observations for training, and the remaining 1 observations for validation. We do this n times for all combinations, which makes this method potentially very resourse-consuming. For LOOCV and k-fold cross validation, using the trainControl settings of the caret package make it more convenient to calculate the performance on the holdout sets. 
+
+```{r LOO}
+
+# let's demonstrate this on a regression model
+
+# note that for standard linear regression, lm() and glm() will produce the same result
+trControl <- trainControl(method = "LOOCV", savePredictions = TRUE)
+model_form = mpg ~ horsepower
+
+# use LOOCV on the entire dataset
+lm_fit <- train(as.formula(model_form), data = data, method = model_type, trControl = trControl)
+lm_fit
+
+# we can get the results of the resampling as follows:
+lm_fit_loocv_results <- lm_fit$results
+
+# now, if we want to find out which polynomial regression to choose, we can define a simple loop, calculate the LOOCV RMSE for each polynomial degree, and select the lowest one
+
+# let's see how the LOOCV MSE is for various polynomial regression models
+# we can use this to identify the 'best' one
+Results_LOOCV <- lm_fit_loocv_results
+degree <- 2:5
+for (d in degree){
+  form <- bquote(mpg ~ poly(horsepower, .(d), raw=TRUE))
+  lm_fit <- train(as.formula(form), data = data, method = model_type, trControl = trControl)
+  print(lm_fit$results)
+  Results_LOOCV[d,] <- lm_fit$results
+}
+
+Results_LOOCV
+
+# visualize and select the best one
+Results_LOOCV %>% ggplot(aes(x = 1:5, y = RMSE)) + geom_line()
+Results_LOOCV[which.min(Results_LOOCV$RMSE),]
+
+```
+
+## K-fold Cross Validation
+
+Then, let's look at the standard method of resampling: k-fold cross validation. Common values for k are 5 or 10. The code below uses k-fold cross validation for a classification problem. For a regression problem, we can simply adjust the trainControl setting from 'LOOCV' to 'cv'
+
+```{r k-foldCV}
+
+# we can reuse the previous code, the only thing we need to change is the number of folds K
+
+library(pROC)
+source("../Utils.R")
+set.seed(17)
+
+# another note: the trainControl function selects the initial factor level as the 'preferred' level. if we want to change this, we should adjust the data itself 
+
+target_var <- 'AHD'
+# note: we can specify the formula like this. if you specify individual predictors, they have to match the column names in the dataset
+model_form <- AHD ~ Age + Sex + RestBP + Chol + Ca
+model_type <- "glm"
+positive_class <- "Yes"
+negative_class <- "No"
+
+heart <- read_csv("Heart.csv")
+# note that the first column is only the observation index. we can delete this
+dataset <- prepare_heart(heart)
+
+# note: if you want to get the predictions for each fold, we need to set the appropriate parameter
+# note 2: the twoClassSummary returns the average ROC, sensitivity, and specificity values. if you use defaultSummary instead, you get the average accuracy
+trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary)
+
+
+glm_fit <- train(as.formula(model_form) , data = dataset, method = model_type, family = binomial, trControl = trControl, metric = 'ROC') # the metric parameter indicates which metric the cross validation will focus on
+glm_fit
+
+# we can get the results of the resampling, averaged over the k folds, as follows:
+glm_fit_cv_results <- glm_fit$results
+
+# we can also get a confusion matrix representing the 'average' performance
+confusionMatrix(glm_fit) # this gives you a percentage representation
+confusionMatrix(glm_fit, 'average') # this gives you an actual count
+confusionMatrix(glm_fit, 'none') # this gives you the aggregated count
+
+# if we want some additional information, we can use following parameters
+glm_fit$resample # gives you the average and kappa statistic for each fold
+
+# sidenote: we can, e.g., also manually calculate the AUC score (or any other metric) for each fold and average it:
+all_predictions <- glm_fit$pred
+
+all_aucs <- data.frame('AUC' = double())
+
+for (fold in unique(all_predictions$Resample)){
+  local_data <- all_predictions %>% filter(Resample == fold) 
+  local_prob <- local_data %>% select(positive_class)
+  local_true <- local_data %>% select(obs)
+  # get the AUC value from roc
+  local_frame <- data.frame(local_true,local_prob)
+  all_aucs[nrow(all_aucs) + 1,] <- auc(roc(local_frame$obs, local_frame[[positive_class]]))
+}
+all_aucs
+
+```
+
+
+## Hands-on Session
+Now, let's try resampling on the titanic dataset. Create a 70/30 training-validation/test split, use k-fold cross validation on the training set to create a classification model, and compare its performance on the training and on the test set by calculating the confusion matrices for both training and test set.
+
+```{r hands-on1}
+
+titanic <- read_csv("Titanic.csv")
+# convert variables into factors
+dataset <- prepare_titanic(titanic)
+
+set.seed(1)
+
+
+```
+
+
+## Oversampling, undersampling, and SMOTE
+Finally, let's look at a common method for dealing with imbalanced classes in classification: SMOTE. It stands for Synthetic Minority Oversampling Technique. We can also use only over- or only undersampling.
+
+```{r oversampling}
+# Oversampling via SMOTE
+# in this example, we will combine resampling with SMOTE
+
+library(DMwR) # for the smote function
+library(caret) # for the confusion matrix
+
+set.seed(10)
+
+heart <- read_csv("Heart_imbalanced.csv")
+dataset <- prepare_heart(heart)
+
+target_var <- 'AHD'
+# note: we can specify the formula like this. if you specify individual predictors, they have to match the column names in the dataset
+model_form <- AHD ~ Age + Sex + RestBP + Chol + Ca
+model_type <- "glm"
+positive_class <- "Yes"
+negative_class <- "No"
+
+# then, let's split the data into training and test (don't use SMOTE for the test sets! it will create unrealistic performance measures)
+trainIndex <- createDataPartition(dataset[[target_var]], 1, 0.7, list = FALSE)
+data_train <- dataset[trainIndex,]
+data_test <- dataset[-trainIndex,]
+
+# let's look at the distribution of values first
+summary(data_train)
+summary(data_test)
+
+trControl <- trainControl(method = 'cv', number = 5, savePredictions = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary)
+
+# build a logistic regression model first
+glm_fit <- train(as.formula(model_form), data = data_train, method = model_type, family = binomial, trControl = trControl, metric = 'ROC') # the metric parameter indicates which metric the cross validation will focus on
+glm_fit
+
+# we can get the results of the resampling, averaged over the k folds, as follows:
+(glm_fit_cv_results <- glm_fit$results)
+
+# and then, calculate the predictions
+glm_fit_pred <- glm_fit %>% predict(newdata = data_test, type = 'raw')
+confusionMatrix(glm_fit_pred, data_test[[target_var]], positive = positive_class)
+
+
+### then, let's try this with SMOTE
+trControl <- trainControl(method = 'cv', number = 5, savePredictions = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary, sampling = 'smote')
+
+# build a logistic regression model first
+glm_fit_smote <- train(as.formula(model_form), data = data_train, method = model_type, family = binomial, trControl = trControl, metric = 'ROC') # the metric parameter indicates which metric the cross validation will focus on
+glm_fit_smote
+
+(glm_fit_smote_cv_results <- glm_fit_smote$results)
+
+# and then, calculate the predictions
+glm_fit_pred_smote <- glm_fit_smote %>% predict(newdata = data_test, type = 'raw')
+confusionMatrix(glm_fit_pred_smote, data_test[[target_var]], positive = positive_class)
+
+
+### finally, let's try this with undersampling (equivalent to downsampling)
+trControl <- trainControl(method = 'cv', number = 5, savePredictions = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary, sampling = 'down')
+
+# build a logistic regression model first
+glm_fit_down <- train(as.formula(model_form), data = data_train, method = model_type, family = binomial, trControl = trControl, metric = 'ROC') # the metric parameter indicates which metric the cross validation will focus on
+glm_fit_down
+
+(glm_fit_down_cv_results <- glm_fit_down$results)
+
+# and then, calculate the predictions
+glm_fit_pred_down <- glm_fit_down %>% predict(newdata = data_test, type = 'raw')
+confusionMatrix(glm_fit_pred_down, data_test[[target_var]], positive = positive_class)
+
+
+```
+
+
+
+
