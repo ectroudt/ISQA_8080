@@ -40,4 +40,52 @@ knitr::opts_chunk$set(echo = FALSE)
 **c**.
 The advantages of using cross-validation on the entire data-set include an estimate of the error-rate that will have relatively low variance and will only require k implementations of each model tested. The generation of an error-rate curve across the different models being tested (and potentially at different levels of k) will allow for selection of the model with a given parameter setting that produces the minimal error rate.
 
-If the sample data is split 80/20 training:test, with cross validation being used on the training data to select the model, it will allow for a ‘fine-tuning’ of the parameters being considered. This leads the estimation of an error-rate that is based on a set of observations that were not involved at all in fitting the model (20% of the split), and therefore will provide a more valid estimate of that model's actual performance. 
+If the sample data is split 80/20 training:test, with cross validation being used on the training data to select the model, it will allow for a ‘fine-tuning’ of the parameters being considered. This leads the estimation of an error-rate that is based on a set of observations that were not involved at all in fitting the model (20% of the split), and therefore will provide a more valid estimate of that model's actual performance.
+
+##__Question 3__
+
+```{r code_part_a, include=FALSE}
+library(GGally)
+library(caret)
+
+
+setwd("~/ISQA_8080/Assignments/Assignment_2/")
+
+census_Data <- read.csv("Census.csv")
+
+# Inspect dataset, are all variables correctly set as factors?
+names(census_Data)
+head(census_Data)
+dim(census_Data)
+
+# get pairwise comparisons of income and each predictor variable 
+ggpairs(census_Data, columns = c(1, 7), aes(color = Income))
+ggpairs(census_Data, columns = c(2, 7), aes(color = Income))
+ggpairs(census_Data, columns = c(3, 7), aes(color = Income))
+ggpairs(census_Data, columns = c(4, 7), aes(color = Income))
+ggpairs(census_Data, columns = c(5, 7), aes(color = Income))
+ggpairs(census_Data, columns = c(6, 7), aes(color = Income))
+
+
+```
+**a**. Based off of the pairwise comparisons of income with each predictor variable, marital status appears to be most relevant, with both occupation and sex also having some relevancy to a lesser extent. In all three of these variables, there are certain levels that exhibit a much larger proportion of income > 50K compared with the other levels, making them relevant for predicting whether an individual’s income is > 50K.
+
+```{r code_part_b, include=FALSE}
+
+set.seed(1)
+
+response_var <- 'Income'
+
+# Set the training index that will generate 70-30 split when applied to dataset
+train_index <- createDataPartition(y = census_Data[[response_var]], p = 0.7, list = FALSE)
+
+# Create both teh training and validation datasets
+census_Training_Data <- census_Data[train_index,]
+census_Validation_Data <- census_Data[-train_index,]
+
+# Evaluate both datasets
+summary(census_Training_Data)
+summary(census_Validation_Data)
+```
+
+**b**. After generating the 70-30 split and producing summaries of each data set, the distributions of the variables within each data-set appear to be very similar, without any noticeable significant differences.
