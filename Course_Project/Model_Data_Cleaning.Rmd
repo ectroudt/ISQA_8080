@@ -1,0 +1,108 @@
+---
+title: "ISQA8080_Course_Project_Data_Cleaning"
+author: "Eric Troudt"
+date: "October 13, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## R Markdown
+
+```{r Libraries and WD}
+
+library(Hmisc)
+library(e1071)
+library(caret)
+library(GGally)
+library(lubridate)
+library(RANN)
+
+setwd("~/ISQA_8080/Course_Project/")
+
+
+```
+
+
+
+```{r Model dataset}
+
+model_data <- read.csv("Model Dataset for Students.csv")
+
+str(model_data)
+describe(model_data)
+
+
+model_data$churned <- as.factor(model_data$churned)
+
+model_data$Company_Creation_Date <- as.character(model_data$Company_Creation_Date)
+
+model_data$Company_Creation_Date <- dmy_hms(model_data$Company_Creation_Date)
+
+# Create intervals for Company_Creation_Date 
+Start_90s = as.Date('1990-01-01')
+End_90s = as.Date('1999-12-31')
+
+Start_2000s_1stHalf = as.Date('2000-01-01')
+End_2000s_1stHalf = as.Date('2004-12-31')
+
+Start_2000s_2ndHalf = as.Date('2005-01-01')
+End_2000s_2ndHalf = as.Date('2009-12-31')
+
+Start_2010s_1stHalf = as.Date('2010-01-01')
+End_2010s_1stHalf = as.Date('2014-12-31')
+
+Start_2010s_2ndHalf = as.Date('2015-01-01')
+End_2010s_2ndHalf = as.Date('2019-12-31')
+
+# Create new column for Creation_Date periods
+model_data$CreationDatePeriods = lapply(model_data$Company_Creation_Date, FUN = function(x){
+          
+  if(is.na(x)){
+    return(NA)
+  }else if(Start_90s <= x & x <= End_90s){
+    return("90s")
+  }else if(Start_2000s_1stHalf <= x & x <= End_2000s_1stHalf){
+    return("2000 - 2004")
+  }else if(Start_2000s_2ndHalf <= x & x <= End_2000s_2ndHalf){
+    return("2005 - 2009")
+  }else if(Start_2010s_1stHalf <= x & x <= End_2010s_1stHalf){
+    return("2010 - 2014")
+  }else if(Start_2010s_2ndHalf <= x & x <= End_2010s_2ndHalf){
+    return("2015 - 2019")
+  }else{
+    return(NA)
+    }
+})
+
+
+# Convert returned list of characters to factor
+model_data$CreationDatePeriods <- unlist(model_data$CreationDatePeriods)
+
+model_data$CreationDatePeriods <- as.factor(model_data$CreationDatePeriods)
+
+model_data$CreationDatePeriods <- addNA(model_data$CreationDatePeriods, ifany = TRUE)
+
+# Use preProcess to imput missing values using KNN model, **May automatically apply centering and scaling?
+pre_Imputed_total_Accounts <- preProcess(model_data, method = c("knnImpute"))
+imputed_total_Accounts <- predict(pre_Imputed_total_Accounts, model_data)
+
+describe(imputed_total_Accounts)
+
+summary(imputed_total_Accounts)
+
+ggpairs(model_data)
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
