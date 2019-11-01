@@ -86,23 +86,22 @@ model_data$CreationDatePeriods <- as.factor(model_data$CreationDatePeriods)
 model_data$CreationDatePeriods <- addNA(model_data$CreationDatePeriods, ifany = TRUE)
 
 # Use preProcess to imput missing values using KNN model, **May automatically apply centering and scaling?
-pre_Imputed_total_Accounts <- preProcess(model_data, method = c("knnImpute"))
-imputed_total_Accounts <- predict(pre_Imputed_total_Accounts, model_data)
+pre_Imputed_model_Data <- preProcess(model_data, method = c("knnImpute"))
+imputed_model_Data <- predict(pre_Imputed_model_Data, model_data)
 
-describe(imputed_total_Accounts)
+describe(imputed_model_Data)
 
-summary(imputed_total_Accounts)
+summary(imputed_model_Data)
 
 ggpairs(model_data)
 
+
+ggpairs(imputed_model_Data, columns = c(3, 8), aes(color = churned))
+ggpairs(imputed_model_Data, columns = c(4, 8), aes(color = churned))
+ggpairs(imputed_model_Data, columns = c(5, 8), aes(color = churned))
+ggpairs(imputed_model_Data, columns = c(6, 8), aes(color = churned))
+ggpairs(imputed_model_Data, columns = c(7, 8), aes(color = churned))
+ggpairs(imputed_model_Data, columns = c(9, 8), aes(color = churned))
 ```
 
-## Including Plots
 
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
-```
-
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

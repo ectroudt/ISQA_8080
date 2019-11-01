@@ -44,19 +44,29 @@ If the sample data is split 80/20 training:test, with cross validation being use
 
 ##__Question 3__
 
-```{r code_part_a, include=FALSE}
+```{r code_part_a, include=FALSE, message=FALSE}
 library(GGally)
 library(caret)
-
+library(Hmisc)
+library(magrittr)
+library(pROC)
 
 setwd("~/ISQA_8080/Assignments/Assignment_2/")
 
 census_Data <- read.csv("Census.csv")
 
-# Inspect dataset, are all variables correctly set as factors?
+response_var = "Income"
+head(census_Data)
+
+census_Data <- census_Data %>% dplyr::mutate(Income, Income = dplyr::recode(Income, " <=50K" = "No", " >50K" = "Yes"))
+
+census_Data[["Income"]] <-relevel(census_Data[["Income"]], "Yes")
+
+# Inspect dataset, are all variables correctly set as factors? How are total? Are there any missing?
 names(census_Data)
 head(census_Data)
 dim(census_Data)
+describe(census_Data)
 
 # get pairwise comparisons of income and each predictor variable 
 ggpairs(census_Data, columns = c(1, 7), aes(color = Income))
@@ -68,24 +78,208 @@ ggpairs(census_Data, columns = c(6, 7), aes(color = Income))
 
 
 ```
-**a**. Based off of the pairwise comparisons of income with each predictor variable, marital status appears to be most relevant, with both occupation and sex also having some relevancy to a lesser extent. In all three of these variables, there are certain levels that exhibit a much larger proportion of income > 50K compared with the other levels, making them relevant for predicting whether an individual’s income is > 50K.
+###**a**. 
 
-```{r code_part_b, include=FALSE}
+Based off of the pairwise comparisons of income with each predictor variable, marital status appears to be most relevant, with both occupation and sex also having some relevancy to a lesser extent. In all three of these variables, there are certain levels that exhibit a much larger proportion of income > 50K compared with the other levels, making them relevant for predicting whether an individual’s income is > 50K.
+
+```{r code_part_b, message=FALSE,  warning=FALSE, echo=FALSE}
 
 set.seed(1)
 
-response_var <- 'Income'
 
 # Set the training index that will generate 70-30 split when applied to dataset
 train_index <- createDataPartition(y = census_Data[[response_var]], p = 0.7, list = FALSE)
 
-# Create both teh training and validation datasets
+# Create both the training and validation datasets
 census_Training_Data <- census_Data[train_index,]
 census_Validation_Data <- census_Data[-train_index,]
+
 
 # Evaluate both datasets
 summary(census_Training_Data)
 summary(census_Validation_Data)
 ```
 
-**b**. After generating the 70-30 split and producing summaries of each data set, the distributions of the variables within each data-set appear to be very similar, without any noticeable significant differences.
+###**b**. 
+
+After generating the 70-30 split and producing summaries of each data set, the distributions of the variables within each data-set appear to be very similar, without any noticeable significant differences.
+
+###**c**.
+
+####_Results from using K-fold CV with k=10 on a logistic regression model for Census training data ("<=50K" = Yes, ">50K" = No):_
+
+
+```{r code_part_c_1, message=FALSE,  warning=FALSE, echo=FALSE}
+
+# create model parameters
+model_form <- Income ~ .
+model_type <- "glm"
+
+positive_class <- "Yes"
+negative_class <- "No"
+
+trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary)
+
+# generate logistic regression model output
+log_Reg_fit <- train(as.formula(model_form) , data = census_Training_Data, method = model_type, family = binomial, trControl = trControl, metric = 'ROC')
+
+(log_Reg_fit_Results <- log_Reg_fit$results)
+confusionMatrix(log_Reg_fit, 'average')
+
+all_predictions <- log_Reg_fit$pred
+
+roc(all_predictions$obs, all_predictions$Yes, plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+
+
+```
+
+
+####_Results from using K-fold CV with k=10 on a logistic regression model for Census Validation data ("<=50K" = Yes, ">50K" = No):_
+
+
+```{r code_part_c_2, message=FALSE,  warning=FALSE, echo=FALSE}
+
+# apply logistic regression fit to test/validation data
+log_Fit_Val_Raw <- log_Reg_fit %>% predict(newdata = census_Validation_Data, type = 'raw')
+log_Fit_Val_Probs <- log_Reg_fit %>% predict(newdata = census_Validation_Data, type = 'prob')
+
+confusionMatrix(log_Fit_Val_Raw, census_Validation_Data[[response_var]], positive = positive_class)
+
+roc(census_Validation_Data[[response_var]], log_Fit_Val_Probs[, positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))
+
+
+```
+
+###**d**
+
+####_Results from using K-fold CV with k=10 on a linear discrimination model for Census Training data ("<=50K" = Yes, ">50K" = No):_
+
+
+
+```{r code_part_d_1, message=FALSE,  warning=FALSE, echo=FALSE}
+
+model_type <- "lda"
+
+lda_fit_ <- train(as.formula(model_form) , data = census_Training_Data, method = model_type, trControl = trControl, metric = 'ROC')
+
+
+# generate lda model output
+(lda_fit_Results <- lda_fit_$results)
+confusionMatrix(lda_fit_, 'average')
+
+all_predictions_lda <- lda_fit_$pred
+
+roc(all_predictions_lda$obs, all_predictions_lda$Yes, plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+```
+
+####_Results from using K-fold CV with k=10 on a linear discriminate model for Census Validation data ("<=50K" = Yes, ">50K" = No):_
+
+
+```{r code_part_d_2, message=FALSE, warning=FALSE, echo=FALSE}
+
+# apply lda fit to test/validation data
+lda_fit_Val_Raw <- lda_fit_ %>% predict(newdata = census_Validation_Data, type = 'raw')
+lda_fit_Val_Probs <- lda_fit_ %>% predict(newdata = census_Validation_Data, type = 'prob')
+
+confusionMatrix(lda_fit_Val_Raw, census_Validation_Data[[response_var]], positive = positive_class)
+
+roc(census_Validation_Data[[response_var]], lda_fit_Val_Probs[, positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))
+
+```
+
+###**e**
+
+####_Results from using K-fold CV with k=10 on a quadratic discriminate model for Census Training data ("<=50K" = Yes, ">50K" = No):_
+
+#####__Attempts to use QDA resulted in rank deficiency errors with the models failing to predict any of the observations as ">50 K", suggesting that the current data cannot provide for a sufficient quadratic decision boundary. Different models with less predictor variables and different values for the number of folds (K) were applied, with the only success being a model that omitted all categorical variables (only Age and WeeklyHours were used), but the performance of QDA with this model was relatively poor.__ 
+
+```{r code_part_e_1, message=FALSE, warning=FALSE, echo=FALSE}
+
+# attempt to identify variables that create deficient ranking errors
+dataset_gr50 <- census_Data %>% filter(Income == 'Yes')
+dataset_lsEq50 <- census_Data %>% filter(Income == 'No')
+
+dataset_numerical_gr50 <- predict(dummyVars(model_form, data = dataset_gr50, fullRank = TRUE), newdata = dataset_gr50) # the dummyVars function 
+dataset_numerical_lsQd50 <- predict(dummyVars(model_form, data = dataset_lsEq50, fullRank = TRUE), newdata = dataset_lsEq50)
+
+colnames(dataset_numerical_gr50)[findLinearCombos(dataset_numerical_gr50)$remove]
+colnames(dataset_numerical_lsQd50)[findLinearCombos(dataset_lsEq50)$remove]
+
+
+# generate qda model output
+model_type <- "qda"
+
+# just omit all categorical variables
+model_form <- Income ~ WeeklyHours + Age 
+
+qda_fit_ <- train(as.formula(model_form) , data = census_Training_Data, method = model_type, trControl = trControl, metric = 'ROC')
+
+(qda_fit_Results <- qda_fit_$results)
+confusionMatrix(qda_fit_, 'average')
+
+all_predictions_qda <- qda_fit_$pred
+
+roc(all_predictions_qda$obs, all_predictions_qda$Yes, plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+```
+
+####_Results from using K-fold CV with k=10 on a quadratic discrimination model for Census Validation data ("<=50K" = Yes, ">50K" = No):_
+
+
+See above for rank deficiency problems with QDA
+
+```{r code_part_e_2, message=FALSE, warning=FALSE, echo=FALSE}
+
+# apply qda fit to test/validation data
+qda_fit_Val_Raw <- qda_fit_ %>% predict(newdata = census_Validation_Data, type = 'raw')
+qda_fit_Val_Probs <- qda_fit_ %>% predict(newdata = census_Validation_Data, type = 'prob')
+
+confusionMatrix(qda_fit_Val_Raw, census_Validation_Data[[response_var]], positive = positive_class)
+
+roc(census_Validation_Data[[response_var]], qda_fit_Val_Probs[, positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))
+```
+
+###**f.**
+
+####_Results from using K-fold CV with k=10 on a KNN (k = 3:7) model for Census Training data ("<=50K" = Yes, ">50K" = No)_
+
+```{r code_part_f_1, message=FALSE, warning=FALSE, echo=FALSE}
+
+# generate knn model output
+model_type <- "knn"
+threshold <- 0.5
+
+tuneGrid <- expand.grid(k = 3:7)
+knn_fit <- train(as.formula(model_form), data = census_Training_Data, method = model_type, trControl = trControl, tuneGrid = tuneGrid)
+
+(knn_fit_Results <- knn_fit$results)
+confusionMatrix(knn_fit, 'average')
+
+all_predictions_knn <- knn_fit$pred
+
+roc(all_predictions_knn$obs, all_predictions_knn$Yes, plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+```
+
+
+####_Results from using K-fold CV with k=10 on a KNN (k = 3:7) model for Census Validation data ("<=50K" = Yes, ">50K" = No):_
+
+
+```{r code_part_f_2, message=FALSE, warning=FALSE, echo=FALSE}
+
+# apply knn fit to test/validation data
+
+knn_fit_Val_Raw <- knn_fit %>% predict(newdata = census_Validation_Data, type = 'raw')
+knn_fit_Val_Probs <- knn_fit %>% predict(newdata = census_Validation_Data, type = 'prob')
+
+confusionMatrix(knn_fit_Val_Raw, census_Validation_Data[[response_var]], positive = positive_class)
+
+roc(census_Validation_Data[[response_var]], knn_fit_Val_Probs[, positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))
+
+
+```
+
+
+###**g**
+Based solely off of training data, the logistic regression and LDA model perform comparably with AUC, sensitivity, and specificity being very close between them. The LDA model had a ~ 1.0  edge over logistic regression in terms of specificity (.53 vs .52), and if I had to choose, this would cause me to select LDA. Both QDA and KNN performed much worse.
+
+###**h**
+Both logistic regression and LDA had near-identical performances on the test data, and therefore the LDA model would once again be the slightly more desirable approach, although the difference could be considered trivial depending the emphasis for small (~ 1.0) differences in sensitivity.  

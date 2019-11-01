@@ -1,0 +1,258 @@
+---
+title: "Decision Trees"
+author: "Dr. Christian Haas"
+date: "October 15, 2019"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+This section covers various decision tree methodologies.
+
+## Bagging and Random Forests
+
+As discussed, Bagging is a powerful concept that creates multiple, large decision trees based on bootstrapped data sets and combines them for a prediction.
+
+```{r random-forest}
+
+# new: let's parallelize things. thanks to the caret package, we only need the following four lines to fully parallelize the model training
+library(doParallel)
+num_cores <- detectCores() #note: you can specify a smaller number if you want
+cl <- makePSOCKcluster(num_cores)
+registerDoParallel(cl)
+
+# note: as always when creating parallel threads, we should close them before we leave the program:
+# stopImplicitCluster() # call this when you're done with your code
+
+
+library(randomForest)
+library(pROC)
+library(caret)
+library(tidyverse)
+
+# set your working directory to the current file directory 
+tryCatch({
+  setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+  }, error=function(cond){message(paste("cannot change working directory"))
+})
+
+# first, let's load the util functions
+source("../Week_4_Classification/Utils.R")
+
+set.seed(1)
+
+# let's use the heart data set again
+heart <- read_csv("Heart.csv")
+dataset <- NULL
+dataset <- prepare_heart(heart)
+
+target_var <- 'AHD'
+# note: we can specify the formula like this. if you specify individual predictors, they have to match the column names in the dataset
+model_form <- AHD ~ Age + Sex + RestBP + Chol + Ca + Thal
+model_type <- "rf"
+positive_class <- "Yes"
+negative_class <- "No"
+
+trainIndex <- createDataPartition(dataset[[target_var]], p = 0.8, list = FALSE)
+data_train <- dataset[trainIndex,]
+data_test <- dataset[-trainIndex,]
+
+# we will use a 10-fold cross validation on the training set 
+trControl <- trainControl(method = 'cv', savePredictions = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary)
+
+rf_heart <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl, metric = 'ROC')
+rf_heart
+
+# textual summary of the outcome
+rf_heart$finalModel
+confusionMatrix(rf_heart)
+
+# for variable importance, we can look into following functions
+importance(rf_heart$finalModel)
+varImpPlot(rf_heart$finalModel)
+
+# let's predict its performance on the validation / test data
+rf_heart_pred <- rf_heart %>% predict(newdata = data_test, type = 'raw')
+confusionMatrix(rf_heart_pred, data_test[[target_var]], positive = positive_class)
+
+# alternatively, check other thresholds
+threshold <- 0.4
+rf_heart_probs <- rf_heart %>% predict(newdata = data_test, type = 'prob')
+rf_heart_pred <- factor(ifelse(rf_heart_probs[, positive_class] > threshold, positive_class, negative_class) , levels = levels(dataset[[target_var]]))
+confusionMatrix(rf_heart_pred, data_test[[target_var]], positive = positive_class)
+
+# sidenote: for some model parameters, we can use the tuneGrid function of caret to include in the model building process. for allowed parameters that can be used for this, use modelLookop('model.name')
+modelLookup('rf')
+
+# option 1: random search
+# we will use a 10-fold cross validation on the training set to select the best complexity parameter
+trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary, search = 'random')
+
+rf_heart_random <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl, metric = 'ROC', tuneLength = 20)
+
+rf_heart_random
+
+# let's predict its performance on the validation / test data
+rf_heart_random_pred <- rf_heart_random %>% predict(newdata = data_test, type = 'raw')
+confusionMatrix(rf_heart_random_pred, data_test[[target_var]], positive = positive_class)
+
+# option 2: grid search
+# we will use a 10-fold cross validation on the training set to select the best complexity parameter
+trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary, search = 'grid')
+
+# we also set up a grid search. note: you need to find valid values for the parameter in this case
+tGrid <- expand.grid(.mtry = c(1:10))
+
+# sidenote: the randomForest package provides additional parameters that can be tuned, e.g., the number of trees
+# we can include them here as well!
+
+rf_heart_grid <- train(model_form, data = data_train, method = model_type, trControl = trControl, metric = 'ROC', tuneGrid = tGrid)
+
+rf_heart_grid
+# we can plot the results of the grid search (for the mtry parameter)
+plot(rf_heart_grid)
+
+# let's predict its performance on the validation / test data
+rf_heart_grid_pred <- rf_heart_grid %>% predict(newdata = data_test, type = 'raw')
+confusionMatrix(rf_heart_grid_pred, data_test[[target_var]], positive = positive_class)
+
+
+```
+
+## Hands-on Session 1
+
+Let's use a random forest to build a model for the titanic data set.
+
+Use a split between training and test (or cross validation), try different parameters, and see how well you can predict whether a passenger survives or not.
+
+
+```{r hands-on1}
+
+titanic <- read_csv("titanic.csv")# read data
+
+dataset <- NULL
+dataset <- prepare_titanic(titanic)
+
+target_var <- 'survived'
+model_form <- survived ~ sex + age + sibsp + parch + fare + embarked
+positive_class = 'Yes'
+negative_class = 'No'
+model_type <- 'rf'
+
+trainIndex_HO <- createDataPartition(dataset[[target_var]], p = 0.8, list = FALSE)
+data_train_HO <- dataset[trainIndex,]
+data_test_HO <- dataset[-trainIndex,]
+
+trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary, search = 'random')
+
+rf_titanic_random <- train(as.formula(model_form), data = data_train_HO, method = model_type, trControl = trControl, metric = 'ROC', tuneLength = 20)
+
+rf_titanic_random
+
+rf_titanic_random_pred <- rf_titanic_random %>% predict(newdata = data_test_HO, type = 'raw')
+confusionMatrix(rf_titanic_random_pred, data_test_HO[[target_var]], positive = positive_class)
+
+importance(rf_titanic_random$finalModel)
+varImpPlot(rf_heart$finalModel)
+
+```
+
+
+## Boosting
+
+Finally, let's try a gradient boosting tree (also called gradient boosting machine, gbm).
+
+Note that gbms are often defined for numeric variables, not for categorical. When using gbms with categorical variables, the results might not be perfect.
+
+```{r boosting}
+library(xgboost)
+
+heart <- read_csv("Heart.csv")
+dataset <- NULL
+dataset <- prepare_heart(heart)
+
+target_var <- 'AHD'
+# note: we can specify the formula like this. if you specify individual predictors, they have to match the column names in the dataset
+model_form <- AHD ~ Age + Sex + RestBP + Chol + Ca 
+model_type <- 'xgbTree'
+positive_class <- "Yes"
+negative_class <- "No"
+
+set.seed(1)
+
+trainIndex <- createDataPartition(dataset[[target_var]], p = 0.8, list = FALSE)
+data_train <- dataset[trainIndex,]
+data_test <- dataset[-trainIndex,]
+
+# we will use a 10-fold cross validation on the training set 
+trControl <- trainControl(method = 'cv', savePredictions = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary)
+
+xgb_heart <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl, metric = 'ROC')
+
+# textual summary of the outcome
+xgb_heart
+summary(xgb_heart$finalModel)
+
+# let's predict its performance on the validation / test data
+xgb_heart_pred <- xgb_heart %>% predict(newdata = data_test, type = 'raw')
+xgb_heart_probs <- xgb_heart %>% predict(newdata = data_test, type = 'prob')
+confusionMatrix(xgb_heart_pred, data_test[[target_var]], positive = positive_class)
+
+# ROC curve
+roc(data_test[[target_var]], xgb_heart_probs[, positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))
+
+# excursus 1: visualizing single trees (not very intuitive / recommended for Boosted Trees)
+library(DiagrammeR)
+xgb.plot.tree(model = xgb_heart$finalModel, tree = c(1))  # first tree
+xgb.plot.multi.trees(model = xgb_heart$finalModel) # representation of all trees 
+
+
+# then, let's add parameter tuning
+modelLookup('xgbTree')
+
+trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE, classProbs = TRUE, search = 'grid')
+
+tGrid <- expand.grid(nrounds = seq(10,100,10),
+                   max_depth = c(1, 3, 5, 7),
+                   eta = c(0.001,0.01,0.1),
+                   gamma = c(0),
+                   colsample_bytree = c(1),
+                   min_child_weight = c(1),
+                   subsample = c(1))
+
+trControl <- trainControl(method = 'cv', savePredictions = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary, search = 'grid')
+
+xgb_heart <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl, metric = 'ROC', tuneGrid = tGrid, verbose = FALSE)
+
+# alternative: random search
+trControl <- trainControl(method = 'cv', savePredictions = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary, search = 'random')
+xgb_heart_randomSearch <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl, metric = 'ROC', tuneLength = 50, verbose = FALSE)
+
+# textual summary of the outcome
+xgb_heart
+summary(xgb_heart$finalModel)
+
+# let's predict its performance on the validation / test data
+xgb_heart_pred <- xgb_heart %>% predict(newdata = data_test, type = 'raw')
+xgb_heart_probs <- xgb_heart %>% predict(newdata = data_test, type = 'prob')
+confusionMatrix(xgb_heart_pred, data_test[[target_var]], positive = positive_class)
+
+# ROC curve
+roc(data_test[[target_var]], xgb_heart_probs[, positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))
+
+# excursus 2: we can also compare it with another model, e.g. random forest
+# re-create random forest:
+rf_heart <- train(as.formula(model_form), data = data_train, method = 'rf', trControl = trControl, metric = 'ROC')
+
+# let's predict its performance on the validation / test data
+rf_heart_probs <- rf_heart %>% predict(newdata = data_test, type = 'prob')
+
+roc_heart <- plot(roc(data_test[[target_var]], rf_heart_probs[, positive_class]), print.auc = TRUE, col = "blue")
+roc_heart <- plot(roc(data_test[[target_var]], xgb_heart_probs[, positive_class]), print.auc = TRUE, 
+                 col = "green", print.auc.y = .4, add = TRUE)
+
+# we should close / stop the parallel clusters once we're done
+stopImplicitCluster()
+```
+
+

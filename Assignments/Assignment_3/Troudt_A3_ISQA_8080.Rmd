@@ -1,0 +1,101 @@
+---
+title: "Assignment_3"
+author: "Eric Troudt"
+date: "October 30, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE)
+```
+
+
+## PART 1
+
+
+**a.** Based off the 7 different predictor variables, *Income* is the only one that does not have any missing values, while the remaining 6 variables each contain anywhere from 1500-1650 values (out of 32,561 observations) that are missing from the data set.
+
+###__Before processing NAs__
+
+```{r Part 1 - data load, echo=FALSE, warning=FALSE}
+
+tryCatch({
+  setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+  }, error=function(cond){message(paste("cannot change working directory"))
+})
+
+library(RANN)
+library(caret)
+library(tidyverse)
+
+census_Data <- read.csv("Census.csv")
+
+
+# Inspect dataset, are all variables correctly set as factors? How are total? Are there any missing?
+summary(census_Data)
+
+```
+
+
+**b.** To handle the NAs for the categorical variables, NA was added as another level. For quantitative variables, NAs were imputed using the 'bagImpute' method from caret.
+
+###__After processing NAs__
+
+```{r Part 1 - data processing, echo=FALSE, warning=FALSE}
+
+
+# Add NA values as separate class for factors
+census_Data$Workclass <- addNA(census_Data$Workclass)
+census_Data$Race <- addNA(census_Data$Race)
+census_Data$Sex <- addNA(census_Data$Sex)
+
+# Extra all int variables and all factor variables into separate data frames
+census_data_num <- census_Data %>% select_if(is.numeric)
+census_data_non_num <- census_Data %>% select_if(~!is.numeric(.x))
+
+# use bagImpute to impute mising values in int variables of the census data
+census_DATA_PreProc <- preProcess(census_data_num, method = "bagImpute") 
+census_Data_num_imputed <- predict(census_DATA_PreProc, census_data_num)
+census_data_bagImputed<- cbind(census_data_non_num, predict(census_DATA_PreProc, census_data_num))
+summary(census_data_bagImputed)
+
+
+```
+
+
+```{r Part 1 model building, echo=FALSE, warning=FALSE, message=FALSE}
+
+library(rpart)
+library(rpart.plot)
+
+# set-up model params
+target_var <- 'Income'
+# note: we can specify the formula like this. if you specify individual predictors, they have to match the column names in the dataset
+model_form <- Income ~ Workclass + Race + Sex + Age + Education.num + Hours.per.week
+model_type <- "rpart"
+positive_class <- "Yes"
+negative_class <- "No"
+
+# Convert income to yes (high) and no (low) with relevel for yes as first
+census_data_bagImputed <- census_data_bagImputed %>% mutate(Income, Income = recode(Income, 'Low' = 'No', 'High' = 'Yes'))
+census_data_bagImputed[[target_var]] <- relevel(census_data_bagImputed[[target_var]], 'Yes')
+
+# split data 80% train
+set.seed(sample(1000, 1))
+trainIndex <- createDataPartition(census_data_bagImputed[[target_var]], p = 0.8, list = FALSE)
+census_data_train <- census_data_bagImputed[trainIndex,]
+census_data_test <- census_data_bagImputed[-trainIndex,]
+
+# use trainControl with cross-val and 'grid' for tuning parameter
+trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE, classProbs = TRUE, search = 'grid')
+
+# cp = 0 --> no pruning
+tGrid <- expand.grid(cp=c(0.0))
+
+tree_census <- train(as.formula(model_form), data = census_data_train, method = model_type, trControl = trControl, metric = 'Accuracy', tuneGrid = tGrid)
+
+rpart.plot(tree_census$finalModel, type = 1, extra = 1, under = TRUE)
+
+
+```
+

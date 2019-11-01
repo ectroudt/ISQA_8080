@@ -131,10 +131,12 @@ Then, let's look at the standard method of resampling: k-fold cross validation. 
 # we can reuse the previous code, the only thing we need to change is the number of folds K
 
 library(pROC)
-source("../Utils.R")
+source("./Utils.R")
 set.seed(17)
 
 # another note: the trainControl function selects the initial factor level as the 'preferred' level. if we want to change this, we should adjust the data itself 
+
+trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary)
 
 target_var <- 'AHD'
 # note: we can specify the formula like this. if you specify individual predictors, they have to match the column names in the dataset
@@ -143,16 +145,17 @@ model_type <- "glm"
 positive_class <- "Yes"
 negative_class <- "No"
 
-heart <- read_csv("Heart.csv")
+heart <- read_csv("~/ISQA_8080/Week_4_Classification/Heart.csv")
 # note that the first column is only the observation index. we can delete this
 dataset <- prepare_heart(heart)
 
 # note: if you want to get the predictions for each fold, we need to set the appropriate parameter
 # note 2: the twoClassSummary returns the average ROC, sensitivity, and specificity values. if you use defaultSummary instead, you get the average accuracy
-trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary)
+
 
 
 glm_fit <- train(as.formula(model_form) , data = dataset, method = model_type, family = binomial, trControl = trControl, metric = 'ROC') # the metric parameter indicates which metric the cross validation will focus on
+
 glm_fit
 
 # we can get the results of the resampling, averaged over the k folds, as follows:
@@ -189,11 +192,43 @@ Now, let's try resampling on the titanic dataset. Create a 70/30 training-valida
 
 ```{r hands-on1}
 
-titanic <- read_csv("Titanic.csv")
+titanic <- read_csv("titanic.csv")
 # convert variables into factors
 dataset <- prepare_titanic(titanic)
 
 set.seed(1)
+
+target = "survived"
+
+train_index <- createDataPartition(y = dataset[[target]], p = 0.7, list = FALSE)
+
+training_set <- dataset[train_index,]
+test_Set <- dataset[-train_index,]
+
+model_form <- survived ~ . -name -cabin
+
+trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary)
+
+model_type <- "glm"
+positive_class <- "Yes"
+negative_class <- "No"
+
+glm_fit <- train(as.formula(model_form) , data = training_set, method = model_type, family = binomial, trControl = trControl, metric = 'ROC')
+
+glm_fit_cv_results <- glm_fit$results
+
+# we can also get a confusion matrix representing the 'average' performance
+confusionMatrix(glm_fit) # this gives you a percentage representation
+confusionMatrix(glm_fit, 'average') # this gives you an actual count
+confusionMatrix(glm_fit, 'none') # this gives you the aggregated count
+
+# if we want some additional information, we can use following parameters
+glm_fit$resample # gives you the average and kappa statistic for each fold
+
+# sidenote: we can, e.g., also manually calculate the AUC score (or any other metric) for each fold and average it:
+all_predictions <- glm_fit$pred
+
+
 
 
 ```

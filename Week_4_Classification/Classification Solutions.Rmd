@@ -1,0 +1,419 @@
+---
+title: "Classification"
+author: "Dr. Christian Haas"
+date: "September 6, 2019"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+## Classification - Logistic Regression
+
+This R section gives an overview of essential Classification algorithms using R. We start with implementing and evaluating Logistic Regression. For this, we make use of R's glm function. 
+
+```{r LogReg}
+
+library(ISLR)
+library(GGally)
+library(tidyverse)
+library(caret)
+library(Hmisc)
+library(e1071)
+library(pROC)
+
+# we will use the Heart dataset here. It is a collection of medical patients that were tested for a heart disease (AHD column). We want to see if we can predict the existence of a heart disease based on some other observed values.
+
+# set your working directory to the current file directory 
+tryCatch({
+  setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+  }, error=function(cond){message(paste("cannot change working directory"))
+})
+
+heart <- read_csv("Heart.csv")
+# note that the first column is only the observation index. we can delete this
+heart <- heart %>% select(-c(1))
+
+names(heart)
+dim(heart)
+
+# let's get an overview of the data first
+describe(heart)
+
+# we can look at scatterplots and pairwise comparisons first
+ggpairs(heart, aes(color = AHD))
+
+# as we can see, some variables are actually factors, not numerical
+heart <- heart %>% mutate_at(c("Sex","Fbs","RestECG","ExAng","Slope","Ca"), as.factor)
+
+# also, make sure character vectors are converted to factors
+heart <- heart %>% mutate_if(is.character, as.factor)
+
+dataset <- heart
+
+# then, let's calculate the correlation between the variables
+# note that we can make this easier by getting the numerical columns only
+dataset_numeric <- dataset %>% select_if(is.numeric)
+cor(dataset_numeric)
+
+# we can also identify correlated predictors easily (again using the caret package)
+(high_correlation <- findCorrelation(cor(dataset_numeric), cutoff = 0.7))
+
+##### Logistic Regression #####
+
+# we will use the glm function for this
+# first, let's specify the target variable and the model form
+
+target_var <- 'AHD'
+# note: we can specify the formula like this. if you specify individual predictors, they have to match the column names in the dataset
+model_form <- AHD ~ Age + Sex + RestBP + Chol + Ca
+model_type <- "glm"
+positive_class <- "Yes"
+negative_class <- "No"
+
+trControl <- trainControl(method='none')
+# note: for glm you need to specify the additional family = binomial parameter for R to recognize that it's a logistic regression
+glm_fit <- train(as.formula(model_form), data = dataset, method = model_type, family = binomial, na.action = na.omit, trControl = trControl)
+
+# let's look at the summary of the created model
+summary(glm_fit)
+
+coef(glm_fit$finalModel)
+
+summary(glm_fit$finalModel)$coef
+summary(glm_fit$finalModel)$coef[,4] #this gives you the point estimators only
+
+# now, let's predict the probabilities of AHD (Yes or No) with the model
+glm_probs <- predict(glm_fit, type = "prob") # note that this gives you the predictions on the training set!
+
+# show the first 10 predictions. 
+glm_probs[1:10, 2] # the '2' indicates the probability of predicting 'Yes'. see the glm_probs dataset for further details
+
+# let's check the length of the predictions. we see that we only get 299 predictions even though we have 303 initial observations.
+# this is due to the missing values (NA) in Ca
+nrow(glm_probs)
+
+# in order to get predictions for all, we need to either replace the NA values with sth else, or use a different model without the incomplete variables
+
+# for categorical variables we can just use NA as a new factor level
+dataset$Ca <- addNA(dataset$Ca, ifany = TRUE)
+
+# as we need to do this every time we read in the dataset, let's use the preparation function for the heart.csv dataset provided in the Utils.R script
+
+source("../Utils.R") # load the functions provided in Utils.R
+dataset <- NULL
+heart <- read_csv("Heart.csv")
+dataset <- prepare_heart(heart) 
+
+# re-run, now with the full model (no NA values)
+
+glm_fit <- train(as.formula(model_form), data = dataset, method = model_type, family = binomial, trControl = trControl)
+glm_probs <- predict(glm_fit, type = "prob") # note that this gives you the predictions on the training set!
+nrow(glm_probs)
+
+# then, let's convert this to binary predictions with a default threshold value of 0.5
+threshold <- 0.5
+glm_pred <- factor(ifelse(glm_probs[, positive_class] > threshold, positive_class, negative_class) , levels = c(negative_class, positive_class))
+
+# we can use following function to display the confusion matrix and additional metrics.
+confusionMatrix(glm_pred, dataset[[target_var]], positive = positive_class)
+
+# note: the previous data prep steps and code set the class of interest to 'yes' and calculates sensitivity and specificity accordingly. we can change that by manually providing the 'positive' class
+confusionMatrix(glm_pred, dataset[[target_var]], positive = "No")
+
+
+# and look at the ROC curve
+
+roc(dataset[[target_var]], glm_probs[, positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))
+# get auc
+dataset_auc <- roc(dataset[[target_var]], glm_probs[, positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+
+# we can also create a confusion matrix when we have a threshold value other than 0.5
+threshold <- 0.7
+glm_pred <- factor(ifelse(glm_probs[, positive_class] > threshold, positive_class, negative_class) , levels = c(negative_class, positive_class))
+
+# create the confusion matrix. note: the positive = 'Yes' parameter indicates that we see the 'Yes' outcome as the outcome of interest
+confusionMatrix(glm_pred, dataset[[target_var]], positive = positive_class)
+
+# finally, predict a specific value
+newdata <- data.frame(Age=c(20), Sex = c("0"), RestBP = c(140), Chol = c(0.2),  Ca =c("0"))
+
+predict(glm_fit, newdata = newdata, type="raw") # creates the predicted class
+predict(glm_fit, newdata = newdata, type="prob") # creates the predicted probabilities for the classes
+
+```
+
+## Hands-on Session 1
+Let's create a logistic regression model using the titanic.csv dataset. 
+1) Specifically, try to predict whether a passenger survived (1 or 0), given a set of predictor variables.
+2) Calculate the accuracy, sensitivity, specificity, and kappa statistic for the classifier. 3) Create the ROC curve
+
+Note: Depending on the predictors, you will get a warning message that 'prediction from a rank-deficient fit may be misleading'. This commonly indicates that at least one variable is a (linear) combination of other variables, causing the underlying model matrix to be rank-deficient. For our course, you can ignore this message for now.
+
+More information on the dataset can be found here: https://www.kaggle.com/c/titanic/data
+
+```{r hands-on-1}
+
+# read data
+dataset <- NULL
+titanic <- read_csv("titanic.csv")
+# convert variables into factors
+dataset <- prepare_titanic(titanic)
+
+target_var <- 'survived'
+# note: we can specify the formula like this. if you specify individual predictors, they have to match the column names in the dataset
+model_form <- survived ~ sex + age + sibsp + parch + fare + embarked 
+model_type <- "glm"
+positive_class <- "Yes"
+negative_class <- "No"
+
+# create a Logistic Regression model
+
+log_fit_titanic <- train(as.formula(model_form), data = dataset, method = model_type, family = binomial, na.action = na.omit, trControl = trControl)
+
+summary(log_fit_titanic)
+
+# creat confusion matrix and calculate performance metrics
+threshold <- 0.5
+log_fit_titanic_probs <- log_fit_titanic %>% predict(type = "prob")
+log_fit_titanic_pred <- factor(ifelse(log_fit_titanic_probs[, positive_class] < threshold, negative_class, positive_class), levels = c(negative_class, positive_class))
+
+# create the confusion matrix. note: the positive = '1' parameter indicates that we see the '1' outcome as the outcome of interest
+confusionMatrix(log_fit_titanic_pred, dataset[[target_var]], positive = positive_class)
+
+# draw ROC
+roc(dataset[[target_var]], log_fit_titanic_probs[,positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE)
+# get AUC
+dataset_auc <- roc(dataset[[target_var]], log_fit_titanic_probs[, positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE)$auc
+
+```
+
+
+## Linear Discriminant Analysis (LDA)
+
+Now, let's look at LDA as an alternative model for classification. The MASS library has a ready-made lda() function that we'll use for this
+
+```{r lda}
+
+# as we need to do this every time we read in the dataset, let's use the preparation function for the heart.csv dataset provided in the Utils.R script
+
+source("../Utils.R") # load the functions provided in Utils.R
+dataset <- NULL
+heart <- read_csv("Heart.csv")
+dataset <- prepare_heart(heart) 
+
+model_form <- AHD ~ Age + Sex + RestBP + Chol + Ca
+target_var <- "AHD"
+model_type <- 'lda'
+positive_class <- 'Yes'
+negative_class <- 'No'
+
+
+trControl <- trainControl(method='none')
+
+# with the lda method, we can can specify the model just as we did with the glm function
+lda_fit <- train(as.formula(model_form), data = dataset, method = model_type, trControl = trControl)
+
+# the lda_fit object gives us some information about prior probabilities and coefficients of the linear discriminants
+lda_fit$finalModel
+
+# we can also use the predict function again to predict new outcomes
+lda_class <- lda_fit %>%  predict(type ='raw') # this assumes a threshold of 0.5
+lda_probs <- lda_fit %>% predict(type = 'prob')
+
+confusionMatrix(lda_class, dataset[[target_var]], positive = positive_class)
+
+# ROC curve
+roc(dataset[[target_var]], lda_probs[, positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))
+# get auc
+lda_auc <- roc(dataset[[target_var]], lda_probs[, positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+
+```
+
+## QDA
+
+Let's look at an alternative to LDA: the Quadratic Discriminant Analysis. As the name implies, it uses non-linear (quadratic) decision boundaries instead of linear ones. We will again use the MASS library as it provides a qda() function for this.
+
+```{r qda}
+
+# Quadratic Discriminant Analysis
+model_type <- 'qda'
+
+model_form <- AHD ~ Age + Sex + RestBP + Chol + Ca
+target_var <- "AHD"
+positive_class <- 'Yes'
+negative_class <- 'No'
+
+# QDA relies on full rank matrices, and if the underlying data (model) matrix does not have full rank, it will throw an error message. hence, let's catch this case so that we can still create the markdown document
+tryCatch({
+  # with the lda method, we can can specify the model just as we did with the glm function
+  qda_fit <- train(as.formula(model_form), data = dataset, method = model_type, trControl = trControl)
+  
+  # the qda_fit object gives us some information about prior probabilities and coefficients of the linear discriminants
+  qda_fit$finalModel
+  
+  # we can also use the predict function again to predict new outcomes
+  qda_class <- qda_fit %>%  predict(type ='raw') # this assumes a threshold of 0.5
+  qda_probs <- qda_fit %>% predict(type = 'prob')
+  
+  confusionMatrix(qda_class, dataset[[target_var]], positive = positive_class)
+  
+  # ROC curve
+  roc(dataset[[target_var]], qda_probs[, positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))
+  # get auc
+  qda_auc <- roc(dataset[[target_var]], qda_probs[, positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+}, error=function(cond){message(paste("error while creating the QDA model"))
+})
+
+
+
+```
+
+## In class exercise 2
+Now, let's re-examine the titanic dataset and create an LDA and QDA model similar to the Logistic Regression Model that you ran earlier.
+
+Calculate the confusion matrix and the corresponding metrics. How do they compare against each other?
+
+Note: for QDA, only use sex, age, and fare as predictors, otherwise you're going to get an error message here
+
+```{r hands-on-2}
+
+# first, let's load the util functions
+source("./Utils.R")
+
+# read data
+dataset <- NULL
+titanic <- read_csv("titanic.csv")
+dataset <- prepare_titanic(titanic)
+
+# Quadratic Discriminant Analysis
+model_type_1 <- 'lda'
+model_type_2 <- 'qda'
+
+target_var <- 'survived'
+model_form <- survived ~ sex + age + sibsp + parch + fare + embarked
+positive_class <- "Yes"
+negative_class <- "No"
+
+# with the lda method, we can can specify the model just as we did with the glm function
+trControl = trainControl(method = 'none')
+lda_fit_titanic <- train(as.formula(model_form), data = dataset, method = model_type_1, trControl = trControl)
+
+# the lda_fit object gives us some information about prior probabilities and coefficients of the linear discriminants
+lda_fit_titanic$finalModel
+
+# we can also use the predict function again to predict new outcomes
+lda_class <- lda_fit_titanic %>%  predict(type ='raw') # this assumes a threshold of 0.5
+lda_probs <- lda_fit_titanic %>% predict(type = 'prob')
+
+confusionMatrix(lda_class, dataset[[target_var]], positive = positive_class)
+
+# ROC curve
+roc(dataset[[target_var]], lda_probs[, positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))
+# get auc
+lda_auc <- roc(dataset[[target_var]], lda_probs[, positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+
+tryCatch({
+  # create QDA model
+  qda_fit_titanic <- train(as.formula(model_form), data = dataset, method = model_type_2, trControl = trControl)
+}, error=function(cond){message(paste("error while creating the QDA model"))
+})
+
+  # excursus: the code above gives you an error message at first due to 'rank deficiency in group No'. it means that we either don't have enough data, or that we have columns that are linear combinations of other columns, which break the qda algorithm. We can check for this potentially problematic variables using caret's findLinearCombos function, and remove the variables accordingly
+  dataset_survived <- dataset %>% filter(survived == 'Yes')
+  dataset_not_survived <- dataset %>% filter(survived == 'No')
+  
+  # get the numerical matrix
+  dataset_numerical_survived <- predict(dummyVars(model_form, data = dataset_survived, fullRank = TRUE), newdata = dataset_survived) # the dummyVars function creates dummy variables for all factors
+  
+  dataset_numerical_not_survived <- predict(dummyVars(model_form, data = dataset_not_survived, fullRank = TRUE), newdata = dataset_not_survived)
+# indicate which variables should be removed
+colnames(dataset_numerical_survived)[findLinearCombos(dataset_numerical_survived)$remove]
+colnames(dataset_numerical_not_survived)[findLinearCombos(dataset_numerical_not_survived)$remove]
+# the previous result indicates that embarked can create rank deficiencies. the easiest option is to remove them from the list of predictors (not ideal, though)
+
+
+
+model_form <- survived ~ sex + age + fare + sibsp +parch + fare
+lda_fit_titanic <- train(as.formula(model_form), data = dataset, method = model_type_1, trControl = trControl)
+
+qda_fit_titanic <- train(as.formula(model_form), data = dataset, method = model_type_2, trControl = trControl)
+
+# we can also use the predict function again to predict new outcomes
+lda_class <- lda_fit_titanic %>%  predict(type ='raw') # this assumes a threshold of 0.5
+lda_probs <- lda_fit_titanic %>% predict(type = 'prob')
+qda_class <- qda_fit_titanic %>%  predict(type ='raw') # this assumes a threshold of 0.5
+qda_probs <- qda_fit_titanic %>% predict(type = 'prob')
+
+confusionMatrix(lda_class, dataset[[target_var]], positive = positive_class)
+confusionMatrix(qda_class, dataset[[target_var]], positive = positive_class)
+
+# ROC curve
+roc(dataset[[target_var]], lda_probs[, positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))
+# get auc
+lda_auc <- roc(dataset[[target_var]], lda_probs[, positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+
+roc(dataset[[target_var]], qda_probs[, positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))
+# get auc
+qda_auc <- roc(dataset[[target_var]], qda_probs[, positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+
+```
+
+## KNN (k-Nearest Neighbors)
+
+Finally, let's see how we can implement knn classification in R. We'll use the knn function of the caret package for this.
+
+```{r knn}
+
+set.seed(1)
+dataset <- NULL
+heart <- read_csv("Heart.csv")
+dataset <- prepare_heart(heart)
+
+target_var <- 'AHD'
+positive_class <- 'Yes'
+negative_class <- 'No'
+threshold <- 0.5
+model_type <- "knn"
+model_form <- AHD ~ Age + Sex + RestBP + Chol + Ca
+
+# we need an additional preparation step here (knn does not accept NA, even as separate factor level)
+
+dataset$Ca <- factor(dataset$Ca, levels = c(levels(dataset$Ca),"-1")) # add an additional factor level
+dataset$Ca[is.na(levels(dataset$Ca)[dataset$Ca])] <- "-1"
+
+# as we need to evaluate different values of k, we can use the 'grid search' function of caret to loop through different values of k.
+
+# let's build an initial model with k = 3
+tuneGrid <- expand.grid(k = 3) # note: a grid search usually considers a set of parameters, not only one. However, in the current implementation of caret only one parameter is allowed when we don't use resampling
+knn_fit <- train(as.formula(model_form), data = dataset, method = model_type, trControl = trControl, tuneGrid = tuneGrid)
+
+# sidenote: if you want to automatically loop through multiple values of k, you need to delete the trControl parameter (courtesy of caret)
+tuneGrid <- expand.grid(k = 3:7) 
+knn_fit <- train(as.formula(model_form), data = dataset, method = model_type, tuneGrid = tuneGrid)
+knn_fit # note: the accuracy values shown here are much lower than the ones before, mostly because caret uses an implicit bootstrapping resampling to estimate the predicted accuracy
+
+# get the probabilities and predictions
+
+knn_fit_probs <- knn_fit %>% predict(type = "prob", newdata = dataset) # due to a curiosity in caret, we need to specify the data on which we want to get the predictions. here: the entire dataset
+knn_fit_class <- knn_fit %>% predict(type = 'raw', newdata = dataset) 
+
+confusionMatrix(knn_fit_class, dataset[[target_var]], positive = positive_class)
+
+```
+
+## In class exercise 3 (optional)
+Create a kNN model for the titanic dataset and compare its performance against the previous classifiers.
+
+```{r hands-on-3}
+
+# read data
+
+# create kNN model
+
+
+```

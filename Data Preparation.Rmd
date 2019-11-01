@@ -1,0 +1,166 @@
+---
+title: "Data Preparation"
+author: "Dr. Christian Haas"
+date: "August 27, 2019"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# R Data Preparation
+
+This is an overview of how to conduct standard data preparation in R. We will consider variable preparation through centering and standardization, as well as dealing with missing observations.
+
+
+## Handling NAs and Imputation
+
+Handling missing values is one of the most common things we need to do with 'real' data. Here, we discuss two options:
+for categorical data, we can simply add 'NA' as separate factor level. For regression tasks, we can try to 'fill' the missing pieces through a process called 'imputation'.
+
+The caret package supports several versions of imputation.
+
+```{r imputation}
+
+# set your working directory to the current file directory 
+tryCatch({
+  setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+  }, error=function(cond){message(paste("cannot change working directory"))
+})
+
+
+# we also load a package for a systematic and clean interface to build machine learning models
+library(caret)
+library(tidyverse)
+data <- read_csv("CollegeGraduationRates_Imputation.csv")
+
+# we can see that we have a bunch of missing values
+summary(data)
+
+# Option 1: categorical variables
+# we have the Private variable which is binary: Yes / No
+# if we convert it to a factor, we will get NA values as some entries are missing
+data <- data %>% mutate_if(is.character, as.factor)
+
+summary(data)
+
+data$Private <- addNA(data$Private, ifany = TRUE)
+summary(data) # note the subtle change: instead of "NA's", the summary now says "NA", indicating it's a separate factor level / category
+
+
+## Option 2: numerical variables. should only be performed on the numerical variables
+library(RANN)
+
+data_num <- data %>% select_if(is.numeric)
+data_non_num <- data %>% select_if(~!is.numeric(.x))
+
+# note: in the current implementation, knnImpute does automatic scaling which might not be desired
+pre_proc_impute_knn <- preProcess(data_num, method = "knnImpute", k = 5)
+data_imputed_knn <- cbind(data_non_num, predict(pre_proc_impute_knn, data_num))
+summary(data_imputed_knn)
+
+pre_proc_impute_bag <- preProcess(data_num, method = "bagImpute") # this will take longer
+data_imputed_bag <- cbind(data_non_num, predict(pre_proc_impute_bag, data_num))
+summary(data_imputed_bag)
+
+pre_proc_impute_median <- preProcess(data_num, method = "medianImpute") # this will take longer
+data_imputed_median <- cbind(data_non_num, predict(pre_proc_impute_median, data_num))
+summary(data_imputed_median)
+
+```
+
+## Centering, Standardizing, Normalizing
+
+In many cases, using input variables on their original scale might not be the best solution. For example, certain models such as KNN use distance-based metrics and thus are sensitive to scale magnitues. In other cases, SVMs often converge faster when the data is centered and standardized first.
+
+Fortunately, with the help of the caret package these steps can be easily implemented. Note: We will talk about more features of the caret package in the future templates. 
+
+```{r data_prep}
+# first, load some required libraries
+library(MASS) # large collection of data sets and functions
+library(ISLR)
+library(pROC)
+source("../Utils.R")
+
+set.seed(1)
+heart <- read_csv("Heart.csv")
+data <- prepare_heart(heart)
+
+target_var <- "AHD"
+model_form <- AHD ~ Age + Sex + RestBP + Chol + Ca
+model_type <- 'knn'
+positive_class <- "Yes"
+
+# let's do a basic training-test split
+trainIndex <- createDataPartition(data[[target_var]], p = 0.7, list = FALSE)
+data_train <- data[trainIndex,]
+data_test <- data[-trainIndex,]
+
+# let's start by fitting the model with the original variables
+trControl <- trainControl(method = 'none', savePredictions = TRUE, classProbs = TRUE)
+
+knn_fit <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl)
+
+# we can also use the predict function again to predict new outcomes
+knn_pred_class <- knn_fit %>%  predict(type ='raw', newdata = data_test) # this assumes a threshold of 0.5
+knn_pred_probs <- knn_fit %>% predict(type = 'prob', newdata = data_test)
+
+# confusion matrix
+confusionMatrix(knn_pred_class, data_test[[target_var]], positive = positive_class)
+
+# ROC curve
+roc(data_test[[target_var]], knn_pred_probs[,positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE)
+
+## then, let's center and scale them
+# we can do this by specifying the following pre-processing step
+
+# option 1: we can manually create the datasets
+
+data_standardize <- preProcess(data_train, method = c("center", "scale")) # scaling is dividing by the standard deviation. combining centering and scaling is equal to standardizing
+
+data_train_standardized <- predict(data_standardize, data_train)
+data_test_standardized <- predict(data_standardize, data_test)
+
+knn_fit_standardized <- train(as.formula(model_form), data = data_train_standardized, method = model_type, trControl = trControl)
+
+# we can also use the predict function again to predict new outcomes
+knn_pred_class_standardized <- knn_fit_standardized %>%  predict(type ='raw', newdata = data_test_standardized) # this assumes a threshold of 0.5
+knn_pred_probs_standardized <- knn_fit_standardized %>% predict(type = 'prob', newdata = data_test_standardized)
+
+# confusion matrix
+confusionMatrix(knn_pred_class_standardized, data_test_standardized[[target_var]], positive = positive_class)
+
+# ROC curve
+roc(data_test_standardized[[target_var]], knn_pred_probs_standardized[,positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE)
+
+# option 2: we can also just give the pre-process information to our training function
+knn_fit_standardized <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl, preProcess = c("center", "scale"))
+
+# we can also use the predict function again to predict new outcomes
+knn_pred_class_standardized <- knn_fit_standardized %>%  predict(type ='raw', newdata = data_test) # this assumes a threshold of 0.5
+knn_pred_probs_standardized <- knn_fit_standardized %>% predict(type = 'prob', newdata = data_test)
+
+# confusion matrix
+confusionMatrix(knn_pred_class_standardized, data_test[[target_var]], positive = positive_class)
+
+# ROC curve
+roc(data_test[[target_var]], knn_pred_probs_standardized[,positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE)
+
+### Normalization
+# we can also use normalization, i.e., converting the numerical variables onto a [0,1] scale
+knn_fit_normalized <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl, preProc = c("range"))
+
+# we can also use the predict function again to predict new outcomes
+knn_pred_class_normalized <- knn_fit_normalized %>%  predict(type ='raw', newdata = data_test) # this assumes a threshold of 0.5
+knn_pred_probs_normalized <- knn_fit_normalized %>% predict(type = 'prob', newdata = data_test)
+
+# confusion matrix
+confusionMatrix(knn_pred_class_normalized, data_test[[target_var]], positive = positive_class)
+
+# ROC curve
+roc(data_test[[target_var]], knn_pred_probs_normalized[,positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE)
+
+```
