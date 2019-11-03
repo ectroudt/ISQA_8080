@@ -7,6 +7,12 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, message = FALSE)
+
+library(doParallel)
+num_cores <- detectCores() #note: you can specify a smaller number if you want
+cl <- makePSOCKcluster(num_cores)
+registerDoParallel(cl)
+
 ```
 
 
@@ -61,7 +67,7 @@ summary(census_data_bagImputed)
 
 
 ```
-
+###__Non-pruned tree visual__
 
 ```{r Part 1 model building, echo=FALSE, warning=FALSE, message=FALSE}
 
@@ -129,12 +135,18 @@ confusionMatrix(tree_census_pred_raw, census_data_test[[target_var]], positive =
 roc(census_data_test[[target_var]], tree_census_pred_probs[ , positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
 
 ```
-**e.** Compared with the non-pruned tree above, the pruned tree (below) displayed increases in both sensitivity and specificity between the training and test data-sets respectively. Additionally, the pruned tree also exhibited an increase in accuracy for the test data, which when taken altogether suggests that the pruned tree was able to reduce variance/over-fitting. 
+**e.** The results of the predicitions for the test data of the pruned tree (below) displayed increases over the training data in: sensitivity, specificity, accuracy, kappa, and auc. Compared with the non-pruned tree above, Specificity was higher in the pruned models while sensistivity was lower, indicating the model may have reduced variability at the expense of more bias. When taken together the test data's higher accuracy and auc, this suggests that the pruned tree was able to reduce variance/over-fitting and allow for better model performance on new data. 
+
+
+
+###__ Pruned tree visual__
 
 ```{r Part 1 tree pruning, echo=FALSE, warning=FALSE, message=FALSE}
+
 # reset trainControl for random level selection during parameter tuning
 trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE, classProbs = TRUE, search = 'random')
 
+# random selection of 10 parameter levels
 census_tree_prune <- train(as.formula(model_form), data = census_data_train, method = model_type, trControl = trControl, metric = 'ROC', tuneLength = 10)
 
 # plot pruned tree
@@ -172,4 +184,122 @@ roc(census_data_test[[target_var]], census_pruned_tree_pred_probs[ , positive_cl
 
 ```
 
+
+**f.** Compared with the pruned decision tree above, the random classifier performs poorly in every metric (accuracy, sensitivity, specificity, auc, kappa).
+
+###__Random classifier Test data Confusion Matrix/Statistics/ROC__
+
+```{r Part 1 random classifier comparison, echo=FALSE, warning=FALSE, message=FALSE}
+
+# random classifier generation
+census_data_train_Yes <- census_data_train[census_data_train[ ,"Income"] == "Yes",]
+census_data_train_No <- census_data_train[census_data_train[ ,"Income"] == "No",]
+
+census_data_train_Yes_Prob <- nrow(census_data_train_Yes)/nrow(census_data_train_No)
+
+rand_Class <- runif(nrow(census_data_test))
+
+rand_Class_pred <- factor(ifelse(rand_Class < census_data_train_Yes_Prob, positive_class, negative_class) , levels = c(positive_class, negative_class))
+
+# evaluate performance
+confusionMatrix(rand_Class_pred, census_data_test[[target_var]], positive = positive_class)
+
+roc(census_data_test[[target_var]], rand_Class, plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+
+```
+
+## PART 2
+
+**a.** 
+
+Bagging: Addresses the issue of variability and over fitting inherent with single decision trees by aggregating numerous decision trees built with boot-strapped datasets of the original data. By aggregating or averaging the numerous trees, the variance can will be reduced and accuracy will improve. 
+
+Boosting:  Addresses the issue of variability and over fitting inherent with single decision trees by building up a final decision tree from the subsequent generation of small, weak trees that rare fit based on prior prediction errors (residuals). In this way, boosting carries out a ‘slow learning’ process that relies on sequential improvement of one tree via incorporation of each weak tree into the overall model.
+
+**b.**
+
+Random forest is a modified version of bagging in which only m number of predictors can be selected from at any given split. A problem with bagging arises out of the top-down greedy approach to tree creation which inevitably leads to numerous bagged trees with similar splits among the internal nodes of the trees, especially during the first initial splits made.  This in-turn leads to highly correlated predictions among the bagged trees, which ultimately leads to higher variability for the averaged prediction. Random forests prevent highly correlated trees by only allowing for a random selection of m predictors at any given split, providing for an estimate with reduced variability and overall better accuracy.
+
+
+**c.- d.** Between the random forest models with mtry = 10 and mtry = 3 (below), allowing only 3 predictors at any split led to increased specificity and accuracy, lower sensitivity and kappa, and a slightly higher auc for the training data. Since the census dataset only has 6 predictor variables, setting mtry to > 6 essentially makes it a regular bagging tree, so the rf tree with mtry = 10's predictions are more correlated, and therefore its model will be less robust and accurate, which is reflected in its lower auc and accuracy.
+
+**e.** Based on the variable importance plot below, the three predictors with the largest mean decrease in gini index were Education.num, Age, and hours.per.week.
+
+
+
+###__Random Forest (mtry = 10) training data Confusion Matrix/Statistics/ROC__
+
+```{r Part2 random forest with mtry = 10, echo=FALSE, warning=FALSE, message=FALSE}
+
+library(randomForest)
+
+# set model type to rf
+model_type = "rf"
+
+# change back to grid search for mtry tuning
+trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary, search = 'grid')
+
+
+rf_tree_census <- train(as.formula(model_form), data = census_data_train, method = model_type, trControl = trControl, metric = 'ROC', tuneGrid = data.frame(mtry = 10))
+
+# get training data predictions
+rf_tree_census_training_predictions <- rf_tree_census$pred
+
+# evaluate predictions
+confusionMatrix(rf_tree_census_training_predictions$pred, rf_tree_census_training_predictions$obs)
+
+roc(rf_tree_census_training_predictions$obs, rf_tree_census_training_predictions$Yes, plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+
+
+```
+
+
+###__Random Forest (mtry = 3) training data Confusion Matrix/Statistics/ROC__
+
+```{r Part 2 random forest with mtry = 3 test predictions, echo=FALSE, warning=FALSE, message=FALSE}
+
+rf_tree_census_mmtry_3 <- train(as.formula(model_form), data = census_data_train, method = model_type, trControl = trControl, metric = 'ROC', tuneGrid = data.frame(mtry = 3))
+
+# get training data predictions
+rf_tree_census_mtry_training_predictions <- rf_tree_census_mmtry_3$pred
+
+# evaluate predictions
+confusionMatrix(rf_tree_census_mtry_training_predictions$pred, rf_tree_census_mtry_training_predictions$obs)
+
+roc(rf_tree_census_mtry_training_predictions$obs, rf_tree_census_mtry_training_predictions$Yes, plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+
+importance(rf_tree_census_mmtry_3$finalModel)
+varImpPlot(rf_tree_census_mmtry_3$finalModel)
+
+```
+
+###__Xgboost training data Confusion Matrix/Statistics/ROC__
+
+```{r Part 2, Gradient boosting model, echo=FALSE, warning=FALSE, message=FALSE}
+
+library(xgboost)
+
+model_type <- 'xgbTree'
+
+xgb_census_tree <- train(as.formula(model_form), data = census_data_train, method = model_type, trControl = trControl, metric = 'ROC')
+
+# get training data predictions
+xgb_census_tree_predictions <- xgb_census_tree$pred
+
+# evaluate predictions
+confusionMatrix(xgb_census_tree_predictions$pred, xgb_census_tree_predictions$obs)
+
+roc(xgb_census_tree_predictions$obs, xgb_census_tree_predictions$Yes, plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+
+
+```
+
+
+
+```{r stop cluster}
+
+# we should close / stop the parallel clusters once we're done
+stopImplicitCluster()
+
+```
 
