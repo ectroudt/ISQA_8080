@@ -69,7 +69,7 @@ summary(census_data_bagImputed)
 ```
 ###__Non-pruned tree visual__
 
-```{r Part 1 model building, echo=FALSE, warning=FALSE, message=FALSE}
+```{r Part 1, model building, echo=FALSE, warning=FALSE, message=FALSE}
 
 library(rpart)
 library(rpart.plot)
@@ -110,7 +110,7 @@ rpart.plot(tree_census$finalModel, type = 1, extra = 1, under = TRUE)
 
 ###__Training data Confusion Matrix/Statistics/ROC__
 
-```{r Part 1 training data stats, echo=FALSE, warning=FALSE, message=FALSE}
+```{r Part 1, training data stats, echo=FALSE, warning=FALSE, message=FALSE}
 
 # get training data predictions
 tree_census_training_predictions <- tree_census$pred
@@ -124,7 +124,7 @@ roc(tree_census_training_predictions$obs, tree_census_training_predictions$Yes, 
 
 ###__Test data Confusion Matrix/Statistics/ROC__
 
-```{r Part 1 test data prediction stats, echo=FALSE, warning=FALSE, message=FALSE}
+```{r Part 1, test data prediction stats, echo=FALSE, warning=FALSE, message=FALSE}
 # predict performance on test data
 tree_census_pred_raw <- tree_census %>% predict(newdata = census_data_test, type = 'raw')
 tree_census_pred_probs <- tree_census %>% predict(newdata = census_data_test, type = 'prob')
@@ -135,13 +135,13 @@ confusionMatrix(tree_census_pred_raw, census_data_test[[target_var]], positive =
 roc(census_data_test[[target_var]], tree_census_pred_probs[ , positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
 
 ```
-**e.** The results of the predicitions for the test data of the pruned tree (below) displayed increases over the training data in: sensitivity, specificity, accuracy, kappa, and auc. Compared with the non-pruned tree above, Specificity was higher in the pruned models while sensistivity was lower, indicating the model may have reduced variability at the expense of more bias. When taken together the test data's higher accuracy and auc, this suggests that the pruned tree was able to reduce variance/over-fitting and allow for better model performance on new data. 
+**e.** The results of the predictions for the test data of the pruned tree (below) displayed increases over the training data in: sensitivity, specificity, accuracy, kappa, and auc. Compared with the non-pruned tree above, Specificity was higher in the pruned models while sensitivity was lower, indicating the model may have reduced variability at the expense of more bias. When taken together the test data's higher accuracy and auc, this suggests that the pruned tree was able to reduce variance/over-fitting and allow for better model performance on new data. 
 
 
 
 ###__ Pruned tree visual__
 
-```{r Part 1 tree pruning, echo=FALSE, warning=FALSE, message=FALSE}
+```{r Part 1, tree pruning, echo=FALSE, warning=FALSE, message=FALSE}
 
 # reset trainControl for random level selection during parameter tuning
 trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE, classProbs = TRUE, search = 'random')
@@ -157,7 +157,7 @@ rpart.plot(census_tree_prune$finalModel, type = 1, extra = 1, under = TRUE, cex 
 
 ###__ Pruned tree Training data Confusion Matrix/Statistics/ROC__
 
-```{r Part 1 pruned tree training data stats, echo=FALSE, warning=FALSE, message=FALSE}
+```{r Part 1, pruned tree training data stats, echo=FALSE, warning=FALSE, message=FALSE}
 
 # get training data predictions
 census_tree_prune_training_predictions <- census_tree_prune$pred
@@ -172,7 +172,7 @@ roc(census_tree_prune_training_predictions$obs, census_tree_prune_training_predi
 
 ###__Pruned tree Test data Confusion Matrix/Statistics/ROC__
 
-```{r Part 1 Pruned tree test data prediction stats, echo=FALSE, warning=FALSE, message=FALSE}
+```{r Part 1, Pruned tree test data prediction stats, echo=FALSE, warning=FALSE, message=FALSE}
 # predict performance on test data
 census_pruned_tree_pred_raw <- census_tree_prune %>% predict(newdata = census_data_test, type = 'raw')
 census_pruned_tree_pred_probs <- census_tree_prune %>% predict(newdata = census_data_test, type = 'prob')
@@ -189,7 +189,7 @@ roc(census_data_test[[target_var]], census_pruned_tree_pred_probs[ , positive_cl
 
 ###__Random classifier Test data Confusion Matrix/Statistics/ROC__
 
-```{r Part 1 random classifier comparison, echo=FALSE, warning=FALSE, message=FALSE}
+```{r Part 1, random classifier comparison, echo=FALSE, warning=FALSE, message=FALSE}
 
 # random classifier generation
 census_data_train_Yes <- census_data_train[census_data_train[ ,"Income"] == "Yes",]
@@ -229,7 +229,7 @@ Random forest is a modified version of bagging in which only m number of predict
 
 ###__Random Forest (mtry = 10) training data Confusion Matrix/Statistics/ROC__
 
-```{r Part2 random forest with mtry = 10, echo=FALSE, warning=FALSE, message=FALSE}
+```{r Part2, random forest with mtry at 10, echo=FALSE, warning=FALSE, message=FALSE}
 
 library(randomForest)
 
@@ -256,7 +256,7 @@ roc(rf_tree_census_training_predictions$obs, rf_tree_census_training_predictions
 
 ###__Random Forest (mtry = 3) training data Confusion Matrix/Statistics/ROC__
 
-```{r Part 2 random forest with mtry = 3 test predictions, echo=FALSE, warning=FALSE, message=FALSE}
+```{r Part 2, random forest with mtry at 3 test predictions, echo=FALSE, warning=FALSE, message=FALSE}
 
 rf_tree_census_mmtry_3 <- train(as.formula(model_form), data = census_data_train, method = model_type, trControl = trControl, metric = 'ROC', tuneGrid = data.frame(mtry = 3))
 
@@ -275,7 +275,7 @@ varImpPlot(rf_tree_census_mmtry_3$finalModel)
 
 ###__Xgboost training data Confusion Matrix/Statistics/ROC__
 
-```{r Part 2, Gradient boosting model, echo=FALSE, warning=FALSE, message=FALSE}
+```{r Part 2, Gradient boosting model generation, echo=FALSE, warning=FALSE, message=FALSE}
 
 library(xgboost)
 
@@ -294,6 +294,27 @@ roc(xgb_census_tree_predictions$obs, xgb_census_tree_predictions$Yes, plot = TRU
 
 ```
 
+
+
+**g.** The predictions resulting from xgboost exhibited the strongest and most optimal combination of: sensitivity, specificity, kappa, accuracy, and auc, compared against all other decision trees (including the pruned/non-pruned trees from part 1) used thus far. Compared specifically against the random forest model with mtry=3, the xgboost model had slightly lower specificity, but a pronounced increase in sensitivity and auc, making it a much more suitable model to use with the census test dataset.
+
+**h.** The prediction results from xgboost on the census test data provide measures that are slightly higher for each one of the metrics listed in _g._, indicating that the gradient boosting model has not been over-fit, and certainly is the most robust and accurate model to utilize.
+
+
+###__Xgboost test data Confusion Matrix/Statistics/ROC__
+
+```{r Part 2, Gradient boosting model test data predictions, echo=FALSE, warning=FALSE, message=FALSE}
+
+# predict performance on test data
+xgb_census_tree_pred_raw <- xgb_census_tree %>% predict(newdata = census_data_test, type = 'raw')
+xgb_census_tree_pred_probs <- xgb_census_tree %>% predict(newdata = census_data_test, type = 'prob')
+
+# evaluate performance
+confusionMatrix(xgb_census_tree_pred_raw, census_data_test[[target_var]], positive = positive_class)
+
+roc(census_data_test[[target_var]], xgb_census_tree_pred_probs[ , positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+
+```
 
 
 ```{r stop cluster}
