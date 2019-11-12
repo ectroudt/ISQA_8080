@@ -1,0 +1,158 @@
+---
+title: "Troudt_A4_ISQA_8080"
+author: "Eric Troudt"
+date: "November 11, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
+
+library(doParallel)
+num_cores <- detectCores() #note: you can specify a smaller number if you want
+cl <- makePSOCKcluster(num_cores)
+registerDoParallel(cl)
+
+```
+
+## PART 1
+
+
+**a.** In this context, a hyperplane consists of a subspace with its number of dimensions determined by 1 - # of predictors. Its purpose is to optimally separate positive and negative training observations in a given data-set, thereby allowing for classifications of test observations into one of the two groups based on which side of the hyperplane it resides.
+
+**b.** 
+*Maximum Margin Classifiers*: Can only be applied if there is perfect separation of positive and negative observations within the training set. In this case, the hyperplane splits the separation of the positive and negative classes so that the margin, or minimal distance to the observations, is maximized (maximum margin). 
+
+*Support Vector Classifiers*: When perfect separation between classes is not possible, a support vector classifier can be used instead. Unlike maximum margin classifiers, support vector classifiers permit certain observations to violate, or have a shorter distance, than the margin, or even fall on the wrong side of the hyperplane. The number of observations, along with their degree of violation, are controlled by the tuning parameter C, which can be adjusted to balance the bias-variance trade-off. 
+
+*Support Vector Classifiers*: In cases where the hyperplane dividing the two classes is not linear, support vector machines can be used to generate non-linear decision boundaries for classes by implementing various polynomial, radial, or otherwise non-linear kernels for quantifying the similarity between training observations. According to the textbook, a given kernel will be applied to the inner products for all pairs of training observations, providing for a computationally efficient way to enlarge the feature space and drastically improve the accuracy of the classifications in ways linear hyperplanes cannot. 
+
+
+###__Data Prep__
+
+```{r Part 1 - data load}
+
+tryCatch({
+  setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+  }, error=function(cond){message(paste("cannot change working directory"))
+})
+
+library(caret)
+library(tidyverse)
+
+cancer_Data <- read.csv("Cancer.csv")
+
+
+# Inspect dataset, are all variables correctly set as factors? How are total? Are there any missing?
+str(cancer_Data)
+summary(cancer_Data)
+
+levels(cancer_Data$bare.nuclei)[levels(cancer_Data$bare.nuclei)=="?"] <- NA
+cancer_Data$bare.nuclei <- addNA(cancer_Data$bare.nuclei)
+
+cancer_Data <- cancer_Data %>% mutate(class, class = recode(class, 'Benign' = 'No', 'Malignant' = 'Yes'))
+cancer_Data[['class']] <- relevel(cancer_Data[['class']], 'Yes')
+
+# split data 80% train
+set.seed(sample(1000, 1))
+trainIndex <- createDataPartition(cancer_Data[['class']], p = 0.7, list = FALSE)
+
+cancer_data_train <- cancer_Data[trainIndex,]
+cancer_data_test <- cancer_Data[-trainIndex,]
+
+
+
+
+```
+
+**c.**
+
+##__Linear SVM Model__
+
+```{r Part 1 - svm linear model build}
+
+library(pROC)
+library(kernlab)
+
+# set-up model params
+target_var <- 'class'
+# note: we can specify the formula like this. if you specify individual predictors, they have to match the column names in the dataset
+model_form <- class ~ clump.thickness + uniformity.cell.size + uniformity.cell.shape + marginal.adhesion + epithelial.cell.size + bare.nuclei + bland.chromatin + normal.nucleoli + mitoses
+model_type <- "svmLinear"
+positive_class <- "Yes"
+negative_class <- "No"
+
+# use trainControl with cross-val 
+trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary)
+
+# set tuning parameter to 1
+tGrid <- expand.grid(C = 1)
+
+cancer_SVM_Linear <- train(as.formula(model_form), data = cancer_data_train, method = model_type, trControl = trControl, metric = 'ROC', preProc = c("center", "scale"))
+
+#View model output
+
+cancer_SVM_Linear$finalModel
+
+#cancer_Data_Training_Predictions <- cancer_SVM_Linear$pred
+
+#confusionMatrix(cancer_Data_Training_Predictions$pred, cancer_Data_Training_Predictions$obs)
+
+#roc(cancer_Data_Training_Predictions$obs, cancer_Data_Training_Predictions$Yes, plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+
+```
+
+
+
+###__Linear SVM - Test data Confusion Matrix/Statistics/ROC__
+
+```{r Part 1 - svm linear model test data predictions}
+
+# predict performance on test data
+cancer_Data_pred_raw <- cancer_SVM_Linear %>% predict(newdata = cancer_data_test, type = 'raw')
+cancer_Data_pred_probs <- cancer_SVM_Linear %>% predict(newdata = cancer_data_test, type = 'prob')
+
+# evaluate performance
+confusionMatrix(cancer_Data_pred_raw, cancer_data_test[[target_var]], positive = positive_class)
+
+roc(cancer_data_test[[target_var]], cancer_Data_pred_probs[ , positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+
+
+```
+
+##__Linear SVM Model with C parameter tuning__
+
+```{r Part 1 - svm linear model C parameter tuning}
+
+
+# reset trControl with search = grid
+trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary, search = 'grid')
+
+# we use a grid with only one parameter (C, the cost parameter) and start by using the default value from the svm() class
+tGrid <- expand.grid(C = c(0.001,0.01,0.1,0.5,1,5,10,100))
+
+cancer_SVM_Linear_CTune <- train(as.formula(model_form), data = cancer_data_train, method = model_type, trControl = trControl, tuneGrid = tGrid, metric = 'ROC', preProc = c("center", "scale"))
+
+cancer_SVM_Linear_CTune$finalModel
+
+```
+
+
+###__Linear SVM with C parameter tuning - Test data Confusion Matrix/Statistics/ROC__
+
+```{r Part 1 - svm linear model C parameter tuning test data predictions}
+
+# predict performance on test data
+cancer_Data_CTune_pred_raw <- cancer_SVM_Linear_CTune  %>% predict(newdata = cancer_data_test, type = 'raw')
+cancer_Data_CTune_pred_probs <- cancer_SVM_Linear_CTune  %>% predict(newdata = cancer_data_test, type = 'prob')
+
+# evaluate performance
+confusionMatrix(cancer_Data_CTune_pred_raw, cancer_data_test[[target_var]], positive = positive_class)
+
+roc(cancer_data_test[[target_var]], cancer_Data_CTune_pred_probs[ , positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+
+
+```
+
+**d.** Based off the performance metrics above for the predictions of the test data for both the default linear svm (C = 1) and the linear svm with C Parameter tuning, there is no noticeable difference between the two models. The default linear SVM has slightly higher values for specificity, accuracy, and kappa, but the difference is negligible. 
