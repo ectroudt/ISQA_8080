@@ -125,6 +125,7 @@ roc(cancer_data_test[[target_var]], cancer_Data_pred_probs[ , positive_class], p
 
 ```{r Part 1 - svm linear model C parameter tuning}
 
+set.seed(1)
 
 # reset trControl with search = grid
 trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary, search = 'grid')
@@ -155,4 +156,143 @@ roc(cancer_data_test[[target_var]], cancer_Data_CTune_pred_probs[ , positive_cla
 
 ```
 
-**d.** Based off the performance metrics above for the predictions of the test data for both the default linear svm (C = 1) and the linear svm with C Parameter tuning, there is no noticeable difference between the two models. The default linear SVM has slightly higher values for specificity, accuracy, and kappa, but the difference is negligible. 
+**d.** Based off the performance metrics above for the predictions of the test data for both the default linear svm (C = 1) and the linear svm with C Parameter tuning (C = 0.001), there is a slight edge with the default linear svm, which has marginally higher values for accuracy, kappa, and specificity, and thus less likely to produce a flase positive. However, the significance of a higher sensitivity in the linear svm with C tuning should also be strongly considered, since it will produce more true positives and for malignant tumors.
+
+**e** The radial svm with C tuning (C = 0.001, sigma = 0.01) outperforms both linear svm models for each metric (kappa, auc, accurancy, sensitivity, and specificity), with a near 100% true positive rate that is achieved without compromising on the false positive rate, which is vital when considering the consequenes of misclassifying tumors.
+
+##__Radial SVM Model with C parameter tuning__
+
+```{r Part 1 - svm Radial model with C parameter tuning}
+
+set.seed(1)
+
+model_type <- "svmRadial"
+
+trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary, search = 'grid')
+
+tGrid <- expand.grid(C = c(0.001, 0.01, 0.1, 1,5,10), sigma = c(1/nrow(cancer_data_train), 0.0001, 0.001, 0.01, 0.1, 0.5))
+
+cancer_SVM_Radial_CTune <- train(as.formula(model_form), data = cancer_data_train, method = model_type, trControl = trControl, tuneGrid = tGrid, metric = 'ROC', preProc = c("center", "scale"))
+
+cancer_SVM_Radial_CTune$finalModel
+
+
+```
+
+###__Radial SVM with C parameter tuning - Test data Confusion Matrix/Statistics/ROC__
+
+```{r Part 1 - svm radial model C parameter tuning test data predictions}
+
+# predict performance on test data
+cancer_Data_CTune_Radial_pred_raw <- cancer_SVM_Radial_CTune  %>% predict(newdata = cancer_data_test, type = 'raw')
+cancer_Data_CTune_Radial_pred_probs <- cancer_SVM_Radial_CTune  %>% predict(newdata = cancer_data_test, type = 'prob')
+
+# evaluate performance
+confusionMatrix(cancer_Data_CTune_Radial_pred_raw, cancer_data_test[[target_var]], positive = positive_class)
+
+roc(cancer_data_test[[target_var]], cancer_Data_CTune_Radial_pred_probs[ , positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+
+
+```
+
+## PART 2
+
+**a.** Both Ridge Regression and LASSO can reduce the variance of the beta parameter estimates of ordinary least squares (OLS). This is achieved by minimizing a modified form of the RSS (loss function) that includes an additional shrinkage penalty consisting of the product of a tuning parameter and the sum of either the square of each beta parameter (Ridge regression) or the absolute value of each beta parameter (Lasso). In both cases, as the tuning parameter is increased, the effect of the shrinkage penalty grows, and as a consequence the beta estimates are ‘shrunk’ or ‘regularized’ closer to zero. Shrinking beta parameters in this manner has the effect of slowly increasing the bias while significantly reducing the variance of the model. To revert back to OLS from either Ridge regression or LASSO, the tuning parameter simply needs to be set to zero, and thus the minimization process will focus solely on the RSS without any shrinkage penalty, which is what OLS does.
+
+**b.** While both are effective at shrinking beta parameter estimates, the difference in the way the shrinkage penalties are calculated for each method leads to an important distinction: The l1 penalty of lasso permits setting beta estimates to 0, while the l2 penalty of Ridge will not, and therefore lasso can perform variable selection in addition to regularization. 
+
+**c** As the textbook demonstrates, Lasso will probably exhibit better model performance (in terms of test MSE) when only a small subset of predictors account for the variance of the response (high beta estimates), while the remaining predictors have little to no effect (extremely low beta estimates). Conversely, when the variance of the response is somewhat evenly distributed among all or most of the predictors (similar beta estimates), Ridge regression will likely perform better. 
+
+**d.**
+
+###__Ridge regression on Ames Housing - Training data RMSE/Regularization parameter__
+
+```{r Part 2 - Ridge regression model generation/training data RMSE}
+
+library(glmnet)
+
+Houses <- read.csv("Housing.csv")
+dataset <- na.omit(Houses)
+
+target_var <- 'SalePrice'
+model_form <- SalePrice ~ .
+model_type <- 'glmnet'
+
+set.seed(1)
+
+# training-test split
+trainIndex <- createDataPartition(dataset[[target_var]], p = 0.7, list = FALSE)
+data_train <- dataset[trainIndex,]
+data_test <- dataset[-trainIndex,]
+
+# standard k-fold cross validation
+trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE)
+
+# alpha = 0 indicates ridge regression, test 100 different values for lambda from 100 to 100000
+tGrid <- expand.grid(alpha = c(0), lambda = 10^seq(5, 3, length = 100)) 
+
+# note: as the penalty depends on the absolute size of the beta parameters, we should standardize the data first
+ridge_regr_Houses <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl, tuneGrid = tGrid, preProc = c('center', 'scale'))
+
+plot(ridge_regr_Houses)
+
+
+```
+
+###__Ridge regression on Ames Housing - Test data predictions/RMSE__
+```{r Part 2 - Ridge regression model Test data predictions RMSE}
+
+ridge_regr_Houses_pred <- predict(ridge_regr_Houses, newdata = data_test, type = 'raw')
+
+(rmse_ridge_regr_Houses <- postResample(pred = ridge_regr_Houses_pred, obs= data_test[[target_var]]))
+
+```
+
+###__Lasso on Ames Housing - Training data RMSE/Regularization parameter/selected coefs__
+
+```{r Lasso model generation/training data RMSE}
+
+# alpha = 1 indicates Lasso, test 100 different values for lambda from 100 to 100000
+tGrid <- expand.grid(alpha = c(1), lambda = 10^seq(5, 2, length = 100)) 
+
+# note: as the penalty depends on the absolute size of the beta parameters, we should standardize the data first
+
+
+lasso_Houses <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl, tuneGrid = tGrid, preProc = c('center', 'scale'))
+
+
+plot(lasso_Houses)
+
+# we can also look at which variables are selected for LASSO
+(lasso_Houses_Coefs <- coef(lasso_Houses$finalModel, lasso_Houses$bestTune$lambda))
+
+
+
+
+```
+
+###__Lasso on Ames Housing - Test data predictions/RMSE__
+```{r Part 2 - Lasso model Test data predictions RMSE}
+
+lasso_Houses_pred <- predict(lasso_Houses, newdata = data_test, type = 'raw')
+
+(rmse_lasso_Houses <- postResample(pred = lasso_Houses_pred, obs= data_test[[target_var]]))
+
+```
+
+###__Linear regression with OLS on Ames Housing - Training data RMSE/Regularization parameter__
+
+```{r}
+
+OLS_Houses <- train(as.formula(model_form), data = data_train, method = 'lm', trControl = trControl, preProc = c('center', 'scale'))
+
+OLS_Houses_pred <- predict(OLS_Houses, newdata = data_test, type = 'raw')
+
+(rmse_OLS_Houses <- postResample(pred = OLS_Houses_pred, obs= data_test[[target_var]]))
+
+
+```
+
+**g.**
+
+Compared with Ridge regression and linear regression with OLS, Lasso performed the best with the lowest testMSE and an Rsquared value that far exceeds the other two models. The top 4 coefficients selected for the lasso model were OverallQual, GrLivArea, GarageCars, and RoofMatlWdShngl, suggesting that these predictors account for a disproportionately large amount of the variance in the sale price of the homes in Ames.
