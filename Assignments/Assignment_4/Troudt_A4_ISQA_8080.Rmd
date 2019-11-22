@@ -84,7 +84,7 @@ positive_class <- "Yes"
 negative_class <- "No"
 
 # use trainControl with cross-val 
-trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary)
+trControl <- trainControl(method = 'repeatedcv', number = 10, repeats = 10, savePredictions = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary)
 
 # set tuning parameter to 1
 tGrid <- expand.grid(C = 1)
@@ -156,9 +156,9 @@ roc(cancer_data_test[[target_var]], cancer_Data_CTune_pred_probs[ , positive_cla
 
 ```
 
-**d.** Based off the performance metrics above for the predictions of the test data for both the default linear svm (C = 1) and the linear svm with C Parameter tuning (C = 0.001), there is a slight edge with the default linear svm, which has marginally higher values for accuracy, kappa, and specificity, and thus less likely to produce a flase positive. However, the significance of a higher sensitivity in the linear svm with C tuning should also be strongly considered, since it will produce more true positives and for malignant tumors.
+**d.** Based off the performance metrics above for the predictions of the test data for both the default linear svm (C = 1) and the linear svm with C Parameter tuning (C = 0.01 or 0.001), neither model consistently outperforms the other. Depending on the particular instance of the two models, one may exhibit a slightly higher value for accuracy, kappa, or sensitivity, but otherwise the two models have near-equal performance in their ability to correctly identify malignant tumors (sensitivty) and avoiding misdiagnoses from false positives (specificity).
 
-**e** The radial svm with C tuning (C = 0.001, sigma = 0.01) outperforms both linear svm models for each metric (kappa, auc, accurancy, sensitivity, and specificity), with a near 100% true positive rate that is achieved without compromising on the false positive rate, which is vital when considering the consequenes of misclassifying tumors.
+**e** The radial svm with C tuning either outperforms or is equal to both linear svm models for each metric (kappa, auc, accuracy, sensitivity, and specificity), with the highest true positive rate that is achieved without compromising on the false positive rate, which is vital when considering the consequences of misclassifying tumors.
 
 ##__Radial SVM Model with C parameter tuning__
 
@@ -212,7 +212,7 @@ roc(cancer_data_test[[target_var]], cancer_Data_CTune_Radial_pred_probs[ , posit
 library(glmnet)
 
 Houses <- read.csv("Housing.csv")
-dataset <- na.omit(Houses)
+dataset <- Houses %>% mutate_at(c("MSSubClass","OverallQual","OverallCond"), as.factor)
 
 target_var <- 'SalePrice'
 model_form <- SalePrice ~ .
@@ -228,8 +228,8 @@ data_test <- dataset[-trainIndex,]
 # standard k-fold cross validation
 trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE)
 
-# alpha = 0 indicates ridge regression, test 100 different values for lambda from 100 to 100000
-tGrid <- expand.grid(alpha = c(0), lambda = 10^seq(5, 3, length = 100)) 
+# alpha = 0 indicates ridge regression, test 100 different values for lambda from 100 to ~200000
+tGrid <- expand.grid(alpha = c(0), lambda = 10^seq(5.3, 3, length = 100)) 
 
 # note: as the penalty depends on the absolute size of the beta parameters, we should standardize the data first
 ridge_regr_Houses <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl, tuneGrid = tGrid, preProc = c('center', 'scale'))
@@ -256,8 +256,6 @@ ridge_regr_Houses_pred <- predict(ridge_regr_Houses, newdata = data_test, type =
 tGrid <- expand.grid(alpha = c(1), lambda = 10^seq(5, 2, length = 100)) 
 
 # note: as the penalty depends on the absolute size of the beta parameters, we should standardize the data first
-
-
 lasso_Houses <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl, tuneGrid = tGrid, preProc = c('center', 'scale'))
 
 
@@ -295,4 +293,4 @@ OLS_Houses_pred <- predict(OLS_Houses, newdata = data_test, type = 'raw')
 
 **g.**
 
-Compared with Ridge regression and linear regression with OLS, Lasso performed the best with the lowest testMSE and an Rsquared value that far exceeds the other two models. The top 4 coefficients selected for the lasso model were OverallQual, GrLivArea, GarageCars, and RoofMatlWdShngl, suggesting that these predictors account for a disproportionately large amount of the variance in the sale price of the homes in Ames.
+Compared with lasso and linear regression with OLS, Ridge Regression performed the best with the lowest RMSE and highest Rsquared value. The top 4 coefficients selected for the lasso model were OverallQual, GrLivArea, GarageCars, and RoofMatlWdShngl, but there are were still 100+ predictors included in the lasso model following feature selection. This indicates that the influence in the variance of sale price is pretty evenly distributed across most of the predictors, and explains why ridge regression outperforms lasso for the ames housing dataset.
