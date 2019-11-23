@@ -19,8 +19,9 @@ library(caret)
 library(GGally)
 library(lubridate)
 library(RANN)
+library(tidyverse)
 
-setwd("~/ISQA_8080/Course_Project/")
+setwd("C:/Users/ectroudt/ISQA_8080_Course_Project/ISQA_8080/Course_Project/")
 
 
 ```
@@ -85,23 +86,30 @@ model_data$CreationDatePeriods <- as.factor(model_data$CreationDatePeriods)
 
 model_data$CreationDatePeriods <- addNA(model_data$CreationDatePeriods, ifany = TRUE)
 
+model_data_num <- model_data %>% select_if(is.numeric)
+model_data_non_num <- model_data %>% select_if(~!is.numeric(.x))
+
+
 # Use preProcess to imput missing values using KNN model, **May automatically apply centering and scaling?
-pre_Imputed_model_Data <- preProcess(model_data, method = c("knnImpute"))
-imputed_model_Data <- predict(pre_Imputed_model_Data, model_data)
+pre_Imputed_model_Data <- preProcess(model_data_num, method = c("bagImpute"))
+imputed_model_Data <- predict(pre_Imputed_model_Data, model_data_num)
+
+model_data_bagImputed<- cbind(model_data_non_num, imputed_model_Data)
+summary(model_data_bagImputed)
 
 describe(imputed_model_Data)
 
 summary(imputed_model_Data)
 
-ggpairs(model_data)
+ggpairs(model_data_bagImputed)
 
 
-ggpairs(imputed_model_Data, columns = c(3, 8), aes(color = churned))
-ggpairs(imputed_model_Data, columns = c(4, 8), aes(color = churned))
-ggpairs(imputed_model_Data, columns = c(5, 8), aes(color = churned))
-ggpairs(imputed_model_Data, columns = c(6, 8), aes(color = churned))
-ggpairs(imputed_model_Data, columns = c(7, 8), aes(color = churned))
-ggpairs(imputed_model_Data, columns = c(9, 8), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(3, 8), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(4, 8), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(5, 8), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(6, 8), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(7, 8), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(9, 8), aes(color = churned))
 ```
 
 
