@@ -5,23 +5,38 @@ date: "October 13, 2019"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE)
-```
 
 ## R Markdown
 
 ```{r Libraries and WD}
 
-library(Hmisc)
-library(e1071)
-library(caret)
-library(GGally)
-library(lubridate)
-library(RANN)
-library(tidyverse)
+# --- install and load all libraries needed for the different classification models ---
 
-setwd("C:/Users/ectroudt/ISQA_8080_Course_Project/ISQA_8080/Course_Project/")
+## ** the glmnet package requires R 3.6.1, make sure it is installed
+
+load.lib<-c("Hmisc", "e1071", "caret","GGally","lubridate","RANN",
+"tidyverse", "pROC", "doParallel", "rpart", "rpart.plot", 
+"randomForest", "xgboost", "kernlab", "glmnet", "DMwR")
+
+install.lib<-load.lib[!load.lib %in% installed.packages()]
+
+for(lib in install.lib) install.packages(lib,dependencies=TRUE)
+
+sapply(load.lib,require,character=TRUE)
+
+# set wd
+tryCatch({
+  setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+  }, error=function(cond){message(paste("cannot change working directory"))
+})
+
+# set knitr options
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
+
+# configure doParallel
+num_cores <- detectCores() #note: you can specify a smaller number if you want
+cl <- makePSOCKcluster(num_cores)
+registerDoParallel(cl)
 
 
 ```
@@ -32,11 +47,16 @@ setwd("C:/Users/ectroudt/ISQA_8080_Course_Project/ISQA_8080/Course_Project/")
 
 model_data <- read.csv("Model Dataset for Students.csv")
 
+model_data$churned <- as.factor(model_data$churned)
+
+model_data <- model_data %>% mutate(churned, churned = recode(churned, '0' = 'No', '1' = 'Yes'))
+
+model_data[["churned"]] <-relevel(model_data[["churned"]], "Yes")
+
 str(model_data)
+
 describe(model_data)
 
-
-model_data$churned <- as.factor(model_data$churned)
 
 model_data$Company_Creation_Date <- as.character(model_data$Company_Creation_Date)
 
@@ -95,11 +115,10 @@ pre_Imputed_model_Data <- preProcess(model_data_num, method = c("bagImpute"))
 imputed_model_Data <- predict(pre_Imputed_model_Data, model_data_num)
 
 model_data_bagImputed<- cbind(model_data_non_num, imputed_model_Data)
+
+model_data_bagImputed<- subset(model_data_bagImputed, select = -Company_Creation_Date)
+
 summary(model_data_bagImputed)
-
-describe(imputed_model_Data)
-
-summary(imputed_model_Data)
 
 ggpairs(model_data_bagImputed)
 
@@ -110,6 +129,14 @@ ggpairs(model_data_bagImputed, columns = c(5, 8), aes(color = churned))
 ggpairs(model_data_bagImputed, columns = c(6, 8), aes(color = churned))
 ggpairs(model_data_bagImputed, columns = c(7, 8), aes(color = churned))
 ggpairs(model_data_bagImputed, columns = c(9, 8), aes(color = churned))
+
+write.csv(model_data_bagImputed, file = "model_data_bagImputed.csv")
+
 ```
 
+```{r stop cluster}
 
+# we should close / stop the parallel clusters once we're done
+stopImplicitCluster()
+
+```

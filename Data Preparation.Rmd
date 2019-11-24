@@ -19,9 +19,11 @@ This is an overview of how to conduct standard data preparation in R. We will co
 ## Handling NAs and Imputation
 
 Handling missing values is one of the most common things we need to do with 'real' data. Here, we discuss two options:
-for categorical data, we can simply add 'NA' as separate factor level. For regression tasks, we can try to 'fill' the missing pieces through a process called 'imputation'.
+for categorical data, we can simply add 'NA' as separate factor level (or, add the separate 'missing' category). For regression tasks, we can try to 'fill' the missing pieces through a process called 'imputation'.
 
-The caret package supports several versions of imputation.
+Note: if you want to combine this with resampling such as cross-validation, you need to make sure to run the imputation only on the training sets and not the test sets, otherwise you could 'leak' information to the test set and thus overestimate the actual model performance.
+
+The caret package supports several versions of imputation, such as random forests, knn, or median imputation.
 
 ```{r imputation}
 
@@ -42,33 +44,91 @@ summary(data)
 
 # Option 1: categorical variables
 # we have the Private variable which is binary: Yes / No
-# if we convert it to a factor, we will get NA values as some entries are missing
-data <- data %>% mutate_if(is.character, as.factor)
+# we replace the NAs for categorical variables with a 'missing' factor level
+# dataset <- dataset %>% mutate_if(is.factor, addNA, ifany=TRUE)
+dataset <- data %>% mutate_if(is.character, ~factor(replace(as.character(.), is.na(.), "missing")))
 
-summary(data)
-
-data$Private <- addNA(data$Private, ifany = TRUE)
-summary(data) # note the subtle change: instead of "NA's", the summary now says "NA", indicating it's a separate factor level / category
-
+# check if the missing categorical variables were added correctly
+summary(dataset)
 
 ## Option 2: numerical variables. should only be performed on the numerical variables
-library(RANN)
+library(RANN) # this defines different imputation methods
 
-data_num <- data %>% select_if(is.numeric)
-data_non_num <- data %>% select_if(~!is.numeric(.x))
+target_var <- 'Grad.Rate'
+model_form <- Grad.Rate ~ .
+model_type <- 'lm'
+
+trainIndex <- createDataPartition(dataset[[target_var]], p = 0.8, list = FALSE)
+data_train <- dataset[trainIndex,]
+data_test <- dataset[-trainIndex,]
+
+# For the categorical variables, we 'learn' the imputation on the training set and then apply this on the test set to avoid leakage. 
+data_train_num <- data_train %>% select_if(is.numeric)
+data_train_non_num <- data_train %>% select_if(~!is.numeric(.x))
+data_test_num <- data_test %>% select_if(is.numeric)
+data_test_non_num <- data_test %>% select_if(~!is.numeric(.x))
 
 # note: in the current implementation, knnImpute does automatic scaling which might not be desired
-pre_proc_impute_knn <- preProcess(data_num, method = "knnImpute", k = 5)
-data_imputed_knn <- cbind(data_non_num, predict(pre_proc_impute_knn, data_num))
-summary(data_imputed_knn)
+pre_proc_impute_knn <- preProcess(data_train_num, method = "knnImpute", k = 5)
+data_train_imputed_knn <- cbind(data_train_non_num, predict(pre_proc_impute_knn, data_train_num))
+summary(data_train_imputed_knn)
+data_test_imputed_knn <- cbind(data_test_non_num, predict(pre_proc_impute_knn, data_test_num))
 
-pre_proc_impute_bag <- preProcess(data_num, method = "bagImpute") # this will take longer
-data_imputed_bag <- cbind(data_non_num, predict(pre_proc_impute_bag, data_num))
-summary(data_imputed_bag)
+pre_proc_impute_bag <- preProcess(data_train_num, method = "bagImpute") # this will take longer
+data_train_imputed_bag <- cbind(data_train_non_num, predict(pre_proc_impute_bag, data_train_num))
+summary(data_train_imputed_bag)
+data_test_imputed_bag <- cbind(data_test_non_num, predict(pre_proc_impute_bag, data_test_num))
 
-pre_proc_impute_median <- preProcess(data_num, method = "medianImpute") # this will take longer
-data_imputed_median <- cbind(data_non_num, predict(pre_proc_impute_median, data_num))
-summary(data_imputed_median)
+# For the categorical variables, we 'learn' the imputation on the training set and then apply this on the test set to avoid leakage. 
+data_train_num <- data_train %>% select_if(is.numeric)
+data_train_non_num <- data_train %>% select_if(~!is.numeric(.x))
+data_test_num <- data_test %>% select_if(is.numeric)
+data_test_non_num <- data_test %>% select_if(~!is.numeric(.x))
+
+#### ALternative, not stable approach
+# note: in the current implementation, knnImpute does automatic scaling which might not be desired
+# specify the preprocessing steps, in this case, the imputation via bagImpute
+library(recipes)
+recipe <- recipe(model_form, data = data_train)
+recipe_imputation <- recipe %>% step_bagimpute(all_numeric()) # impute the missing numerical variables
+recipe_imputation <- recipe %>% step_knnimpute(all_numeric()) # impute the missing numerical variables
+recipe_imputation <- recipe %>% step_medianimpute(all_numeric()) # impute the missing numerical variables
+
+
+# we will use a 10-fold cross validation on the training set to select the best complexity parameter
+trControl <- trainControl(method = 'repeatedcv', repeats = 3, number = 10, savePredictions = TRUE)
+
+# note: we will handle the imputation of numerical variables inside the train() function
+# this guarantees that no imputation information is 'leaked' into the test sets.
+lm_model <- train(recipe_imputation, data = data_train, method = model_type, trControl = trControl)
+
+lm_model
+
+# predicting the test set
+lm_test_pred <- lm_model %>% predict(newdata = data_test)
+
+postResample(lm_test_pred, data_test[[target_var]])
+
+
+# compare against the imputation before the cross validation:
+lm_model_alternative <- train(model_form, data = data_train_imputed_bag, method = model_type, trControl = trControl)
+
+lm_model_alternative
+
+# predicting the test set
+lm_test_alternative_pred <- lm_model_alternative %>% predict(newdata = data_test_imputed_bag)
+
+postResample(lm_test_alternative_pred, data_test[[target_var]])
+
+
+# Alternative 2: specify the pre-process directly in the train() function. Be aware that this can be very time/resource intensive!
+lm_model_alternative_2 <- caret::train(model_form, data = data_train, method = model_type, trControl = trControl, preProcess = 'bagImpute', na.action = na.pass)
+lm_model_alternative_2
+
+# predicting the test set
+lm_test_alternative_2_pred <- lm_model_alternative_2 %>% predict(newdata = data_test, na.action = na.pass)
+
+postResample(lm_test_alternative_2_pred, data_test[[target_var]])
 
 ```
 
@@ -137,7 +197,7 @@ confusionMatrix(knn_pred_class_standardized, data_test_standardized[[target_var]
 roc(data_test_standardized[[target_var]], knn_pred_probs_standardized[,positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE)
 
 # option 2: we can also just give the pre-process information to our training function
-knn_fit_standardized <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl, preProcess = c("center", "scale"))
+knn_fit_standardized <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl, preProc = c("center", "scale"))
 
 # we can also use the predict function again to predict new outcomes
 knn_pred_class_standardized <- knn_fit_standardized %>%  predict(type ='raw', newdata = data_test) # this assumes a threshold of 0.5

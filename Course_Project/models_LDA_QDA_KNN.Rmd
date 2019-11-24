@@ -1,0 +1,169 @@
+---
+title: "ISQA 8080 - Course Project - LDA, QDA, and KNN Models"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
+
+tryCatch({
+  setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+  }, error=function(cond){message(paste("cannot change working directory"))
+})
+
+num_cores <- detectCores() #note: you can specify a smaller number if you want
+cl <- makePSOCKcluster(num_cores)
+registerDoParallel(cl)
+
+```
+
+##_ Log Reg, LDA, QDA, and KNN models for predicting churn rate_
+
+```{r load and process data}
+
+
+dataset <- read.csv("model_data_bagImputed.csv")
+
+dataset$CreationDatePeriods <- addNA(dataset$CreationDatePeriods, ifany = TRUE)
+
+str(dataset)
+summary(dataset)
+target_var <- "churned"
+
+model_form <- churned ~ .
+model_type <- "glm"
+
+positive_class <- "Yes"
+negative_class <- "No"
+
+trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary, sampling = 'smote')
+
+set.seed(sample(1000, 1))
+trainIndex <- createDataPartition(dataset[['churned']], p = 0.7, list = FALSE)
+
+data_train <- dataset[trainIndex,]
+data_test <- dataset[-trainIndex,]
+
+
+```
+
+###_Logistic Regression_
+
+
+```{r Logit Regr model}
+
+# generate logistic regression model output
+
+# try without smote
+log_Reg_fit <- train(as.formula(model_form) , data = data_train, method = model_type, family = binomial, trControl = trControl, metric = 'ROC')
+
+# now use smote
+trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary, sampling = 'smote')
+
+log_Reg_fit_smote <- train(as.formula(model_form) , data = data_train, method = model_type, family = binomial, trControl = trControl, metric = 'ROC')
+
+#compare with and without using smote
+(log_Reg_fit_Results <- log_Reg_fit$results)
+(log_Reg_fit_smote_Results <- log_Reg_fit_smote$results)
+
+confusionMatrix(log_Reg_fit, 'average')
+confusionMatrix(log_Reg_fit_smote, 'average')
+
+
+# apply logistic regression fit to test/validation data
+log_Fit_Val_smote_Raw <- log_Reg_fit_smote %>% predict(newdata = data_test, type = 'raw')
+log_Fit_Val__smote_Probs <- log_Reg_fit_smote %>% predict(newdata = data_test, type = 'prob')
+
+confusionMatrix(log_Fit_Val_smote_Raw, data_test[[target_var]], positive = positive_class)
+
+roc(data_test[[target_var]],log_Fit_Val__smote_Probs[, positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))
+
+
+```
+
+###_LDA_
+
+```{r LDA model}
+
+model_type <- "lda"
+
+lda_fit_ <- train(as.formula(model_form) , data = data_train, method = model_type, trControl = trControl, metric = 'ROC')
+
+
+# generate lda model output
+(lda_fit_Results <- lda_fit_$results)
+confusionMatrix(lda_fit_, 'average')
+
+all_predictions_lda <- lda_fit_$pred
+
+roc(all_predictions_lda$obs, all_predictions_lda$Yes, plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+
+
+lda_fit_Val_Raw <- lda_fit_ %>% predict(newdata = data_test, type = 'raw')
+lda_fit_Val_Probs <- lda_fit_ %>% predict(newdata = data_test, type = 'prob')
+
+confusionMatrix(lda_fit_Val_Raw, data_test[[target_var]], positive = positive_class)
+
+roc(data_test[[target_var]], lda_fit_Val_Probs[, positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))
+
+```
+
+###_QDA_
+
+```{r QDA Model}
+
+qda_fit_ <- train(as.formula(model_form) , data = data_train, method = model_type, trControl = trControl, metric = 'ROC')
+
+(qda_fit_Results <- qda_fit_$results)
+confusionMatrix(qda_fit_, 'average')
+
+all_predictions_qda <- qda_fit_$pred
+
+roc(all_predictions_qda$obs, all_predictions_qda$Yes, plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+
+qda_fit_Val_Raw <- qda_fit_ %>% predict(newdata = data_test, type = 'raw')
+qda_fit_Val_Probs <- qda_fit_ %>% predict(newdata = data_test, type = 'prob')
+
+confusionMatrix(qda_fit_Val_Raw, data_test[[target_var]], positive = positive_class)
+
+roc(data_test[[target_var]], qda_fit_Val_Probs[, positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))
+
+
+```
+
+###_KNN_
+
+```{r KNN Model}
+
+model_type <- "knn"
+threshold <- 0.5
+
+tuneGrid <- expand.grid(k = 3:7)
+knn_fit <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl, metric = 'ROC', tuneGrid = tuneGrid)
+
+(knn_fit_Results <- knn_fit$results)
+confusionMatrix(knn_fit, 'average')
+
+all_predictions_knn <- knn_fit$pred
+
+roc(all_predictions_knn$obs, all_predictions_knn$Yes, plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+
+
+knn_fit_Val_Raw <- knn_fit %>% predict(newdata = data_test, type = 'raw')
+knn_fit_Val_Probs <- knn_fit %>% predict(newdata = data_test, type = 'prob')
+
+confusionMatrix(knn_fit_Val_Raw, data_test[[target_var]], positive = positive_class)
+
+roc(data_test[[target_var]], knn_fit_Val_Probs[, positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))
+
+
+
+```
+
+
+```{r stop clusters}
+
+stopImplicitCluster()
+
+```
+
