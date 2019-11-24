@@ -1,0 +1,412 @@
+---
+title: "Model Selection"
+author: "Dr. Christian Haas"
+date: "July 6, 2018"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Model Selection
+
+This section discusses methods to decide which variables to include in the model.
+Ideally, we should only include variables in the model that have an effect on our target. This keeps our models as simple as possible while retaining predictive power.
+
+## Best Subset Selection
+
+Subset selection procedures focus on the decision which variables to include in the model. Ideally, we only want to include variables that have a significant effect on the target variable.
+However, finding the optimal combination of variables can be a hard / time-consuming problem, which is why subset selection heuristics (such as forward selection) have been developed.
+
+```{r best-subset-selection}
+
+# NOTE: This is review from your previous stats classes, and we won't cover it in class 
+# if you want to use best subsets regression, we need to use the leaps library for subset selection methods directly
+library(ISLR)
+library(leaps)
+library(caret)
+
+# note that there's no built-in function for predict() applied to regsubsets, hence we can write our own to spare ourselves some commonly repeated steps
+predict_regsubsets = function(object, newdata, id, ...){
+  form <- as.formula(object$call[[2]])
+  mat <- model.matrix(form, newdata)
+  coefi <- coef(object, id = id)
+  xvars <- names(coefi)
+  mat[, xvars] %*% coefi
+}
+
+# load the data in memory
+hitters <- Hitters
+
+# following the book, we're going to omit the NA observations here
+# alternatively, you can also use the mice or another imputation package
+dataset <- na.omit(hitters)
+
+target_var <- 'Salary'
+# note: we can specify the formula like this. if you specify individual predictors, they have to match the column names in the dataset
+model_form <- Salary ~ .
+selection_method= 'exhaustive' # note: you can choose between forward, backward, seqrep (stepwise), and exhaustive
+
+nvmax = 19 # specify how many variable we want to consider at maximum
+
+set.seed(1)
+trainIndex <- createDataPartition(dataset[[target_var]], p = 0.8, list = FALSE)
+data_train <- dataset[trainIndex,]
+data_test <- dataset[-trainIndex,]
+
+# note: without further specification, regsubsets will use the best subsets (optimal) algorithm 
+regfit_best <- regsubsets(as.formula(model_form), data = data_train , nvmax = nvmax, method = selection_method)
+
+(reg_summary <- summary(regfit_best))
+
+# plot the RSS and adjusted R2 for different number of variables
+# note: if you receive a 'figure margin too large' error, run the next line
+graphics.off() 
+par(mfrow=c(1,1))
+
+plot(reg_summary$adjr2, xlab="Number of Variables", ylab="Adjusted RSq", type="l")
+# select the number of variables with the max adjusted R2
+max_adjr2 <- which.max(reg_summary$adjr2)
+points(max_adjr2, reg_summary$adjr2[max_adjr2], col="red",cex=2,pch=20)
+
+plot(reg_summary$rss, xlab="Number of Variables", ylab="RSS", type="l")
+min_rss <- which.min(reg_summary$rss)
+points(min_rss, reg_summary$rss[min_rss], col="red",cex=2,pch=20)
+
+
+#repeat for Cp
+plot(reg_summary$cp, xlab="Number of Variables", ylab="Cp", type='l')
+min_cp <- which.min(reg_summary$cp)
+points(min_cp, reg_summary$cp[min_cp], col="red", cex=2, pch=20)
+
+# Repeat for BIC
+min_bic <- which.min(reg_summary$bic)
+plot(reg_summary$bic, xlab="Number of Variables", ylab="BIC", type='l')
+points(min_bic, reg_summary$bic[min_bic], col="red", cex=2, pch=20)
+
+# we can also plot the combination of variables being chosen for each number of variables
+# note: if you receive a 'figure margin too large' error, run the next three lines first
+graphics.off() 
+#par("mar") 
+#par(mar=c(1,1,1,1))
+plot(regfit_best, scale="r2")
+plot(regfit_best, scale="adjr2")
+plot(regfit_best, scale="Cp")
+plot(regfit_best, scale="bic")
+
+
+# use k-fold CV to determine the best model size
+k <- 10
+set.seed(1)
+
+# create the folds on the training data
+folds <- sample(1:k, nrow(data_train), replace = TRUE)
+
+# create a matrix of cross-validation errors that we can use to store the cv.error results
+cv_errors <- matrix(NA, k, nvmax, dimnames = list(NULL, paste(1:nvmax)))
+
+for(j in 1:k){
+  best_fit <- regsubsets(as.formula(model_form), data = data_train[folds!=j,], nvmax = nvmax)
+  for(i in 1:19){
+    temp_test <- data_train[folds == j, ]
+    pred <- predict_regsubsets(best_fit, temp_test, id=i)
+    cv_errors[j,i] <- sqrt(mean((temp_test[[target_var]] - pred)^2))
+  }
+}
+# average the k individual errors and print them
+mean_cv_errors <- apply(cv_errors,2,mean)
+mean_cv_errors
+
+par(mfrow=c(1,1))
+plot(mean_cv_errors,type='b')
+
+# select the best size
+best_size <- which.min(mean_cv_errors)
+
+# what is the corresponding cv error?
+best_cv_error <- mean_cv_errors[best_size]
+
+# for the best size (lowest k-fold CV error), we can calculate the final coefficients by creating the model on the entire training data and then predict the test data
+reg_best <- regsubsets(as.formula(model_form), data = data_train, nvmax=best_size)
+coef(reg_best, best_size)
+
+# get the test set error
+test_pred <- predict_regsubsets(reg_best, newdata = data_test, id = best_size)
+test_rmse <- sqrt(mean((data_test[[target_var]] - test_pred) ^2))
+test_rmse
+
+# Forward and Backward Stepwise Selection
+# the default regsubsets() calculates the best subssets. We can also run the forward and backward selection heuristics with it
+```
+
+
+## Subset Selection Heuristics using Caret
+Due to the inherent complexity of best subsets regression, caret does not provide a best subsets methods out-of-the-box. However, it does provide the heuristic selection procedures which can be readily used for model selection.
+
+```{r subset-selection}
+
+library(ISLR)
+library(caret)
+
+# load the data in memory
+hitters <- Hitters
+
+# following the book, we're going to omit the NA observations here
+# alternatively, you can also use the mice or another imputation package
+dataset <- na.omit(hitters)
+
+set.seed(1)
+trainIndex <- createDataPartition(dataset[[target_var]], p = 0.8, list = FALSE)
+data_train <- dataset[trainIndex,]
+data_test <- dataset[-trainIndex,]
+
+target_var <- 'Salary'
+# note: we can specify the formula like this. if you specify individual predictors, they have to match the column names in the dataset
+model_form <- Salary ~ .
+
+# select the model_type that you want to use
+model_type <- 'leapForward'
+model_type <- 'leapBackward'
+model_type <- 'leapSeq'
+
+
+# load the data in memory
+trControl <- trainControl(method = 'cv', selectionFunction = 'oneSE')
+
+nvmax <- ncol(model.matrix(Salary ~ ., data_train)) -1 # this is the maximum number of variables (including dummy variables)
+tGrid <- expand.grid(nvmax = c(1:nvmax))
+
+lm_fit_variable_seletion <- train(as.formula(model_form), data = data_train, method = model_type, trainControl = trControl, tuneGrid = tGrid)
+lm_fit_variable_seletion
+plot(lm_fit_variable_seletion, type = c("g", "o"))
+
+# predict the test set performance
+lm_fit_pred <- predict(lm_fit_variable_seletion, newdata = data_test, type = 'raw')
+postResample(pred = lm_fit_pred, obs = data_test[[target_var]])
+
+```
+
+# Regularization
+
+Regularization, or shrinkage, are methods to avoid overfitting in linear regression models by forcing the coefficients to be smaller. 
+We will study two variants of regularization: Ridge Regression, and LASSO.
+
+## Ridge Regression
+
+Ridge Regression is a regularization method that puts a penalty on large beta coefficients. The goal is to make the model more stable, i.e., decrease the variance of the model (and also the test error).
+
+```{r ridge}
+
+library(ISLR)
+
+# note that ridge regression does not work with missing variables, hence we need to deal with them first 
+hitters <- Hitters
+dataset <- na.omit(hitters)
+
+target_var <- 'Salary'
+model_form <- Salary ~ .
+model_type <- 'glmnet'
+
+# Ridge Regression is implemented in the glmnet package
+library(glmnet)
+
+set.seed(1)
+
+# let's do a basic training-test split
+trainIndex <- createDataPartition(dataset[[target_var]], p = 0.7, list = FALSE)
+data_train <- dataset[trainIndex,]
+data_test <- dataset[-trainIndex,]
+
+# for now, use a standard k-fold cross validation
+trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE)
+tGrid <- expand.grid(alpha = c(0), lambda = 10^seq(3, -2, length = 100)) # alpha = 0 indicates ridge regression
+
+# note: as the penalty depends on the absolute size of the beta parameters, we should standardize the data first
+ridge <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl, tuneGrid = tGrid, preProc = c('center', 'scale'))
+
+ridge
+plot(ridge)
+
+# let's predict the performance of the ridge regression on the test data and compare it against standard linear regression
+lm_fit <- train(as.formula(model_form), data = data_train, method = 'lm', trControl = trControl, preProc = c('center', 'scale'))
+
+ridge_pred <- predict(ridge, newdata = data_test, type = 'raw')
+lm_pred <- predict(lm_fit, newdata = data_test, type = 'raw')
+
+(rmse_ridge <- postResample(pred = ridge_pred, obs= data_test[[target_var]]))
+(rmse_lm <- postResample(pred = lm_pred, obs= data_test[[target_var]]))
+
+```
+
+
+## LASSO
+
+The LASSO is another regularization method, and usually preferred over Ridge Regression. It performs both regularization and variable selection by forcing some coefficients to be 0, thus reducing the number of predictors in the model.
+
+```{r lasso}
+
+# LASSO is also implemented in the glmnet package
+library(glmnet)
+
+# note that LASSO does not work with missing variables, hence we need to deal with them first 
+hitters <- Hitters
+dataset <- na.omit(hitters)
+
+target_var <- 'Salary'
+model_form <- Salary ~ .
+model_type <- 'glmnet'
+
+set.seed(1)
+
+# let's do a basic training-test split, if we didn't already specify it
+if(!(exists("data_train"))){
+  trainIndex <- createDataPartition(dataset[[target_var]], p = 0.7, list = FALSE)
+  data_train <- dataset[trainIndex,]
+  data_test <- dataset[-trainIndex,] 
+}
+
+# for now, use a standard k-fold cross validation
+trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE) # note: use selectionFunction = 'oneSE' to get models with fewer variables (but potentially lower performance with respect to RMSE)
+tGrid <- expand.grid(alpha = c(1), lambda = 10^seq(2, -2, length = 100)) # alpha = 1 indicates LASSO
+
+# note: as the penalty depends on the absolute size of the beta parameters, we should standardize the data first
+lasso <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl, tuneGrid = tGrid, preProc = c('center', 'scale'))
+
+lasso
+plot(lasso)
+
+# we can also look at which variables are selected for LASSO
+(lasso_best_coef <- coef(lasso$finalModel, lasso$bestTune$lambda))
+
+# let's predict the performance of the ridge regression on the test data and compare it against standard linear regression
+lm_fit <- train(as.formula(model_form), data = data_train, method = 'lm', trControl = trControl, preProc = c('center', 'scale'))
+
+lasso_pred <- predict(lasso, newdata = data_test, type = 'raw')
+lm_pred <- predict(lm_fit, newdata = data_test, type = 'raw')
+
+(rmse_lasso <- postResample(pred = lasso_pred, obs= data_test[[target_var]]))
+(rmse_lm <- postResample(pred = lm_pred, obs= data_test[[target_var]]))
+
+```
+
+
+## Hands-on Session 1
+
+Use the College.csv data set to create a full regression model, a ridge regression, and a LASSO to predict the graduation rate (y = Grad.Rate) for a college. Use the k-fold cross validation and compare the coefficients that you get. What is the difference in mean cross-validation error?
+
+```{r hands-on1}
+# set your working directory to the current file directory 
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+
+library(glmnet)
+library(GGally)
+library(caret)
+library(tidyverse)
+
+dataset <- read_csv("College.csv")
+
+ggpairs(college)
+
+set.seed(1)
+
+target_var <- 'Grad.Rate'
+model_form <- Grad.Rate ~ .
+model_type <- 'glmnet'
+
+# let's do a basic training-test split
+trainIndex <- createDataPartition(dataset[[target_var]], p = 0.7, list = FALSE)
+data_train <- dataset[trainIndex,]
+data_test <- dataset[-trainIndex,]
+
+# for now, use a standard k-fold cross validation
+
+
+```
+
+
+# Dimension Reduction Methods
+
+Dimension reduction methods are another way of reducing the number of predictors to avoid overfitting. In this case, we transform the original predictors into a new space, by selecting linear combinations of the original predictors. 
+
+## PCR and PLS Regression
+```{r pls}
+# Principal Components Regression
+
+library(pls)
+library(caret)
+
+hitters = Hitters
+dataset = na.omit(Hitters)
+
+set.seed(1)
+
+target_var <- 'Salary'
+model_form <- Salary ~ .
+model_type <- 'pcr' # pcr stands for principal component regression
+
+# let's do a basic training-test split, if we didn't already specify it
+trainIndex <- createDataPartition(dataset[[target_var]], p = 0.7, list = FALSE)
+data_train <- dataset[trainIndex,]
+data_test <- dataset[-trainIndex,] 
+
+# for now, use a standard k-fold cross validation
+trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE) # note: use selectionFunction = 'oneSE' to get models with fewer
+
+# we can identify the best number of components through cross validation
+max_comp <- ncol(model.matrix(as.formula(model_form), data_train)) - 1 
+tGrid <- expand.grid(ncomp = c(1:max_comp))
+pcr <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl, tuneGrid = tGrid)
+
+pcr
+plot(pcr)
+
+# let's predict the performance of the pcr on the test data and compare it against standard linear regression
+lm_fit <- train(as.formula(model_form), data = data_train, method = 'lm', trControl = trControl)
+
+pcr_pred <- predict(pcr, newdata = data_test, type = 'raw')
+lm_pred <- predict(lm_fit, newdata = data_test, type = 'raw')
+
+(rmse_pcr <- postResample(pred = pcr_pred, obs= data_test[[target_var]]))
+(rmse_lm <- postResample(pred = lm_pred, obs= data_test[[target_var]]))
+
+
+####### then, repeat this with partial least squares
+model_type <- "pls"
+pls <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl, tuneGrid = tGrid)
+
+plot(pls)
+pls
+summary(pls)
+
+pls_pred <- predict(pls, newdata = data_test, type = 'raw')
+(rmse_pls <- postResample(pred = pls_pred, obs= data_test[[target_var]]))
+
+
+```
+
+
+## Hands-on Part 2
+
+Again using the College.csv data set to predict the number of admissions, use PCR and PLS to build a regression model with fewer variables. Compare their performance (MSE) to the Ridge Regression and LASSO from earlier.
+
+```{r hands-on2}
+
+dataset <- read_csv('College.csv')
+
+set.seed(1)
+
+target_var <- 'Grad.Rate'
+model_form <- Grad.Rate ~ .
+model_type <- 'pcr' # pcr stands for principal component regression
+
+# let's do a basic training-test split, if we didn't already specify it
+trainIndex <- createDataPartition(dataset[[target_var]], p = 0.8, list = FALSE)
+data_train <- dataset[trainIndex,]
+data_test <- dataset[-trainIndex,] 
+
+
+
+```
