@@ -1,0 +1,90 @@
+---
+title: "models_SVM"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
+
+tryCatch({
+  setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+  }, error=function(cond){message(paste("cannot change working directory"))
+})
+
+num_cores <- detectCores(8) #note: you can specify a smaller number if you want
+registerDoParallel(num_cores)
+
+```
+
+##_SVM Radial_
+
+```{r load and process data}
+
+
+dataset <- model_data_bagImputed
+
+
+str(dataset)
+summary(dataset)
+target_var <- "churned"
+
+model_form <- churned ~ . -Company_Number
+model_type <- 'svmRadial'
+
+positive_class <- 'Yes'
+negative_class <- 'No'
+
+
+set.seed(sample(1000, 1))
+
+trainIndex <- createDataPartition(dataset[['churned']], p = 0.7, list = FALSE)
+
+data_train <- dataset[trainIndex,]
+data_test <- dataset[-trainIndex,]
+
+
+```
+
+
+##__Radial SVM Model with C parameter tuning__
+
+```{r Part 1 - svm Radial model with C parameter tuning}
+
+
+trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary, search = 'grid')
+
+tGrid <- expand.grid(C = c(0.001, 0.01, 0.1, 1,5,10), sigma = c(1/nrow(data_train), 0.0001, 0.001, 0.01, 0.1, 0.5))
+
+SVM_Radial_CTune <- train(as.formula(model_form), data = dataset, method = model_type, trControl = trControl, tuneGrid = tGrid, metric = 'ROC', preProc = c("center", "scale"))
+
+SVM_Radial_CTune$finalModel
+
+# get training data predictions
+SVM_Radial_CTune_training_predictions <- SVM_Radial_CTune$pred
+
+# evaluate predictions
+confusionMatrix(SVM_Radial_CTune_training_predictions$pred, SVM_Radial_CTune_training_predictions$obs)
+
+roc(SVM_Radial_CTune_training_predictions$obs, SVM_Radial_CTune_training_predictions$Yes, plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+
+
+# predict performance on test data
+CTune_Radial_pred_raw <- SVM_Radial_CTune  %>% predict(newdata = data_test, type = 'raw')
+CTune_Radial_pred_probs <- SVM_Radial_CTune  %>% predict(newdata = data_test, type = 'prob')
+
+# evaluate performance
+confusionMatrix(cancer_Data_CTune_Radial_pred_raw, cancer_data_test[[target_var]], positive = positive_class)
+
+roc(cancer_data_test[[target_var]], cancer_Data_CTune_Radial_pred_probs[ , positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+
+```
+```{r stop cluster}
+
+# we should close / stop the parallel clusters once we're done
+stopImplicitCluster()
+
+```

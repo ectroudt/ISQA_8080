@@ -132,7 +132,6 @@ for(Var in colnames(merge_Data_subset_nonNUM)) {
 pre_Imputed_model_Data <- preProcess(merge_Data_subset_NUM, method = c("bagImpute", "scale", "center"))
 imputed_model_Data <- predict(pre_Imputed_model_Data, merge_Data_subset_NUM)
 
-(high_Correlation <- findCorrelation(cor(imputed_model_Data)))
 
 model_data_bagImputed<- cbind(merge_Data_subset_nonNUM, imputed_model_Data)
 
@@ -143,13 +142,20 @@ summary(model_data_bagImputed)
 
 ggpairs(model_data_bagImputed)
 
-
+ggpairs(model_data_bagImputed, columns = c(3, 1), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(3, 2), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(3, 4), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(3, 5), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(3, 6), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(3, 7), aes(color = churned))
 ggpairs(model_data_bagImputed, columns = c(3, 8), aes(color = churned))
-ggpairs(model_data_bagImputed, columns = c(4, 8), aes(color = churned))
-ggpairs(model_data_bagImputed, columns = c(5, 8), aes(color = churned))
-ggpairs(model_data_bagImputed, columns = c(6, 8), aes(color = churned))
-ggpairs(model_data_bagImputed, columns = c(7, 8), aes(color = churned))
-ggpairs(model_data_bagImputed, columns = c(9, 8), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(3, 9), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(3, 10), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(3, 11), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(3, 12), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(3, 13), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(3, 14), aes(color = churned))
+
 
 write.csv(model_data_bagImputed, file = "model_data_bagImputed.csv")
 
