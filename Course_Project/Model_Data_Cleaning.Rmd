@@ -5,22 +5,38 @@ date: "October 13, 2019"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE)
-```
 
 ## R Markdown
 
 ```{r Libraries and WD}
 
-library(Hmisc)
-library(e1071)
-library(caret)
-library(GGally)
-library(lubridate)
-library(RANN)
+# --- install and load all libraries needed for the different classification models ---
 
-setwd("~/ISQA_8080/Course_Project/")
+## ** the glmnet package requires R 3.6.1, make sure it is installed
+
+load.lib<-c("Hmisc", "e1071", "caret","GGally","lubridate","RANN",
+"tidyverse", "pROC", "doParallel", "rpart", "rpart.plot", 
+"randomForest", "xgboost", "kernlab", "glmnet", "DMwR")
+
+install.lib<-load.lib[!load.lib %in% installed.packages()]
+
+for(lib in install.lib) install.packages(lib,dependencies=TRUE)
+
+sapply(load.lib,require,character=TRUE)
+
+# set wd
+tryCatch({
+  setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+  }, error=function(cond){message(paste("cannot change working directory"))
+})
+
+# set knitr options
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
+
+# configure doParallel
+num_cores <- detectCores() #note: you can specify a smaller number if you want
+cl <- makePSOCKcluster(num_cores)
+registerDoParallel(cl)
 
 
 ```
@@ -31,77 +47,123 @@ setwd("~/ISQA_8080/Course_Project/")
 
 model_data <- read.csv("Model Dataset for Students.csv")
 
-str(model_data)
-describe(model_data)
 
+firm_Data <- read.csv("Firmographic Data for Students.csv")
 
 model_data$churned <- as.factor(model_data$churned)
+
+model_data <- model_data %>% mutate(churned, churned = recode(churned, '0' = 'No', '1' = 'Yes'))
+
+model_data[["churned"]] <-relevel(model_data[["churned"]], "Yes")
 
 model_data$Company_Creation_Date <- as.character(model_data$Company_Creation_Date)
 
 model_data$Company_Creation_Date <- dmy_hms(model_data$Company_Creation_Date)
 
+merge_Data <- merge(model_data, firm_Data, by.x = 'Company_Number', by.y = 'Company_Number')
+
+model_Variables <- c("Business_Code", "Location_Type", "churned", "total_products", "total_transactions", "total_accounts", "total_revenue", "total_usage", "Employee_Count_Total", "Company_Number", "Public_Private_Indicator", "Small_Business_Indicator", "Minority_Owned_Indicator", "Major_Industry_Category_Name")
+
+merge_Data_subset <- subset(merge_Data, select = model_Variables)
+
+merge_Data_subset <- merge_Data_subset %>% mutate_all(na_if, "")
+
+
+
 # Create intervals for Company_Creation_Date 
-Start_90s = as.Date('1990-01-01')
-End_90s = as.Date('1999-12-31')
+# Start_90s = as.Date('1990-01-01')
+# End_90s = as.Date('1999-12-31')
 
-Start_2000s_1stHalf = as.Date('2000-01-01')
-End_2000s_1stHalf = as.Date('2004-12-31')
+# Start_2000s_1stHalf = as.Date('2000-01-01')
+# End_2000s_1stHalf = as.Date('2004-12-31')
 
-Start_2000s_2ndHalf = as.Date('2005-01-01')
-End_2000s_2ndHalf = as.Date('2009-12-31')
+# Start_2000s_2ndHalf = as.Date('2005-01-01')
+# End_2000s_2ndHalf = as.Date('2009-12-31')
 
-Start_2010s_1stHalf = as.Date('2010-01-01')
-End_2010s_1stHalf = as.Date('2014-12-31')
+# Start_2010s_1stHalf = as.Date('2010-01-01')
+# End_2010s_1stHalf = as.Date('2014-12-31')
 
-Start_2010s_2ndHalf = as.Date('2015-01-01')
-End_2010s_2ndHalf = as.Date('2019-12-31')
+# Start_2010s_2ndHalf = as.Date('2015-01-01')
+# End_2010s_2ndHalf = as.Date('2019-12-31')
 
 # Create new column for Creation_Date periods
-model_data$CreationDatePeriods = lapply(model_data$Company_Creation_Date, FUN = function(x){
-          
-  if(is.na(x)){
-    return(NA)
-  }else if(Start_90s <= x & x <= End_90s){
-    return("90s")
-  }else if(Start_2000s_1stHalf <= x & x <= End_2000s_1stHalf){
-    return("2000 - 2004")
-  }else if(Start_2000s_2ndHalf <= x & x <= End_2000s_2ndHalf){
-    return("2005 - 2009")
-  }else if(Start_2010s_1stHalf <= x & x <= End_2010s_1stHalf){
-    return("2010 - 2014")
-  }else if(Start_2010s_2ndHalf <= x & x <= End_2010s_2ndHalf){
-    return("2015 - 2019")
-  }else{
-    return(NA)
-    }
-})
+# model_data$CreationDatePeriods = lapply(model_data$Company_Creation_Date, FUN = function(x){
+#           
+#  if(is.na(x)){
+#    return(NA)
+#  }else if(Start_90s <= x & x <= End_90s){
+#    return("90s")
+#  }else if(Start_2000s_1stHalf <= x & x <= End_2000s_1stHalf){
+#    return("2000 - 2004")
+#  }else if(Start_2000s_2ndHalf <= x & x <= End_2000s_2ndHalf){
+#    return("2005 - 2009")
+#  }else if(Start_2010s_1stHalf <= x & x <= End_2010s_1stHalf){
+#    return("2010 - 2014")
+#  }else if(Start_2010s_2ndHalf <= x & x <= End_2010s_2ndHalf){
+#    return("2015 - 2019")
+#  }else{
+#    return(NA)
+#    }
+#})
 
 
 # Convert returned list of characters to factor
-model_data$CreationDatePeriods <- unlist(model_data$CreationDatePeriods)
+#model_data$CreationDatePeriods <- unlist(model_data$CreationDatePeriods)
 
-model_data$CreationDatePeriods <- as.factor(model_data$CreationDatePeriods)
+#model_data$CreationDatePeriods <- as.factor(model_data$CreationDatePeriods)
 
-model_data$CreationDatePeriods <- addNA(model_data$CreationDatePeriods, ifany = TRUE)
+#model_data$CreationDatePeriods <- addNA(model_data$CreationDatePeriods, ifany = TRUE)
+
+merge_Data_subset_NUM <- merge_Data_subset %>% select_if(is.numeric)
+
+merge_Data_subset_nonNUM <- merge_Data_subset %>% select_if(~!is.numeric(.x))
+
+for(Var in colnames(merge_Data_subset_nonNUM)) {
+  
+  merge_Data_subset_nonNUM[[Var]] <- addNA(merge_Data_subset_nonNUM[[Var]], ifany = TRUE)
+  merge_Data_subset_nonNUM[[Var]] <- droplevels(merge_Data_subset_nonNUM[[Var]])
+  
+}
+
+(high_Correlation <- findCorrelation(cor(merge_Data_subset_NUM)))
+
 
 # Use preProcess to imput missing values using KNN model, **May automatically apply centering and scaling?
-pre_Imputed_model_Data <- preProcess(model_data, method = c("knnImpute"))
-imputed_model_Data <- predict(pre_Imputed_model_Data, model_data)
-
-describe(imputed_model_Data)
-
-summary(imputed_model_Data)
-
-ggpairs(model_data)
+pre_Imputed_model_Data <- preProcess(merge_Data_subset_NUM, method = c("bagImpute", "scale", "center"))
+imputed_model_Data <- predict(pre_Imputed_model_Data, merge_Data_subset_NUM)
 
 
-ggpairs(imputed_model_Data, columns = c(3, 8), aes(color = churned))
-ggpairs(imputed_model_Data, columns = c(4, 8), aes(color = churned))
-ggpairs(imputed_model_Data, columns = c(5, 8), aes(color = churned))
-ggpairs(imputed_model_Data, columns = c(6, 8), aes(color = churned))
-ggpairs(imputed_model_Data, columns = c(7, 8), aes(color = churned))
-ggpairs(imputed_model_Data, columns = c(9, 8), aes(color = churned))
+model_data_bagImputed<- cbind(merge_Data_subset_nonNUM, imputed_model_Data)
+
+chrned_Data <- subset(merge_Data, merge_Data[,"churned"] == "Yes")
+
+
+summary(model_data_bagImputed)
+
+ggpairs(model_data_bagImputed)
+
+ggpairs(model_data_bagImputed, columns = c(3, 1), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(3, 2), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(3, 4), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(3, 5), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(3, 6), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(3, 7), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(3, 8), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(3, 9), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(3, 10), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(3, 11), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(3, 12), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(3, 13), aes(color = churned))
+ggpairs(model_data_bagImputed, columns = c(3, 14), aes(color = churned))
+
+
+write.csv(model_data_bagImputed, file = "model_data_bagImputed.csv")
+
 ```
 
+```{r stop cluster}
 
+# we should close / stop the parallel clusters once we're done
+stopImplicitCluster()
+
+```

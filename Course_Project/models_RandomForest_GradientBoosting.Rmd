@@ -1,0 +1,116 @@
+---
+title: "ISQA 8080 - Course Project - Random forest, Gradient boosting models"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
+
+tryCatch({
+  setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+  }, error=function(cond){message(paste("cannot change working directory"))
+})
+
+num_cores <- detectCores() #note: you can specify a smaller number if you want
+cl <- makePSOCKcluster(num_cores)
+registerDoParallel(cl)
+
+```
+
+##_ Random forest and Gradient boosting trees_
+
+```{r load and process data}
+
+
+dataset <- read.csv("model_data_bagImputed.csv")
+
+dataset$CreationDatePeriods <- addNA(dataset$CreationDatePeriods, ifany = TRUE)
+
+str(dataset)
+summary(dataset)
+target_var <- "churned"
+
+model_form <- churned ~ .
+model_type <- 'rf'
+
+positive_class <- 'Yes'
+negative_class <- 'No'
+
+
+trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary, search = 'grid', sampling = 'smote')
+
+set.seed(sample(1000, 1))
+
+trainIndex <- createDataPartition(dataset[['churned']], p = 0.7, list = FALSE)
+
+data_train <- dataset[trainIndex,]
+data_test <- dataset[-trainIndex,]
+
+
+```
+
+
+##_Random forest training/test data_
+
+```{r Random Forest model}
+
+
+rf_tree_churn <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl, metric = 'ROC', tuneGrid = data.frame(mtry = 3))
+
+# get training data predictions
+rf_tree_churn_training_predictions <- rf_tree_churn$pred
+
+# evaluate predictions
+confusionMatrix(rf_tree_churn_training_predictions$pred, rf_tree_churn_training_predictions$obs)
+
+roc(rf_tree_churn_training_predictions$obs, rf_tree_churn_training_predictions$Yes, plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+
+# predict performance on test data
+rf_tree_churn_pred_raw <- rf_tree_churn %>% predict(newdata = data_test, type = 'raw')
+rf_tree_churn_pred_probs <- rf_tree_churn %>% predict(newdata = data_test, type = 'prob')
+
+# evaluate performance
+confusionMatrix(rf_tree_churn_pred_raw, data_test[[target_var]], positive = positive_class)
+
+roc(data_test[[target_var]], rf_tree_churn_pred_probs[ , positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+
+
+
+```
+
+
+##_Gradient boosting training/test data_
+
+```{r Gradient boosting model}
+
+model_type <- 'xgbTree'
+
+xgb_churn_tree <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl, metric = 'ROC')
+
+# get training data predictions
+xgb_churn_tree_predictions <- xgb_churn_tree$pred
+
+# evaluate predictions
+confusionMatrix(xgb_churn_tree_predictions$pred, xgb_churn_tree_predictions$obs)
+
+roc(xgb_churn_tree_predictions$obs, xgb_churn_tree_predictions$Yes, plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+
+# predict performance on test data
+xgb_churn_tree_pred_raw <- xgb_churn_tree %>% predict(newdata = data_test, type = 'raw')
+xgb_churn_tree_pred_probs <- xgb_churn_tree %>% predict(newdata = data_test, type = 'prob')
+
+# evaluate performance
+confusionMatrix(xgb_churn_tree_pred_raw, data_test[[target_var]], positive = positive_class)
+
+roc(data_test[[target_var]], xgb_churn_tree_pred_probs[ , positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+
+```
+
+
+
+```{r stop cluster}
+
+# we should close / stop the parallel clusters once we're done
+stopImplicitCluster()
+
+```
