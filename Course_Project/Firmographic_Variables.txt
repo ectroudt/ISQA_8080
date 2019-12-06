@@ -1,15 +1,9 @@
 Location variables:
 
- -Business_Code
- -COUNTRY_CODE
  -Location_Type
 
 business performance variables:
 
- -total_products
- -total_transactions 
- -Revenue__US_Dollars_
- -Revenue_Range
  -Employee_Count_Total
 
 business description variables:
@@ -18,4 +12,24 @@ business description variables:
  -Small_Business_Indicator
  -Minority_Owned_Indicator
  -Major_Industry_Category_Name
- -Related_Industries
+ -Legal_Status_Code
+ -Import_Export_Agent_Code
+ -Population_Code
+ -Number_of_Family_Members
+ -Status_Code
+ -Subsidiary_Indicator
+ -Manufacturing_Indicator
+
+
+
+
+Part of original training/test set
+
+ -churned (Ind Var)
+ -Company_Number
+ -Business_Code
+ -total_products
+ -total_transactions
+ -total_accounts
+ -total_revenue
+ -total_usage
