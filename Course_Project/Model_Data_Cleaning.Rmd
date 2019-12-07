@@ -56,19 +56,34 @@ model_data <- model_data %>% mutate(churned, churned = recode(churned, '0' = 'No
 
 model_data[["churned"]] <-relevel(model_data[["churned"]], "Yes")
 
-model_data$Company_Creation_Date <- as.character(model_data$Company_Creation_Date)
-
-model_data$Company_Creation_Date <- dmy_hms(model_data$Company_Creation_Date)
-
 merge_Data <- merge(model_data, firm_Data, by.x = 'Company_Number', by.y = 'Company_Number')
 
-model_Variables <- c("Business_Code", "Location_Type", "churned", "total_products", "total_transactions", "total_accounts", "total_revenue", "total_usage", "Employee_Count_Total", "Company_Number", "Public_Private_Indicator", "Major_Industry_Category_Name", "Legal_Status_Code", "Import_Export_Agent_Code", "Population_Code", "Number_of_Family_Members", "Manufacturing_Indicator")
+model_Variables <- c("Business_Code", "Company_Creation_Date", "BEMFAB__Marketability_", "Location_Type", "churned", "total_products", "total_transactions", "total_accounts", "total_revenue", "total_usage", "Employee_Count_Total", "Company_Number", "Public_Private_Indicator", "Major_Industry_Category_Name", "Legal_Status_Code", "Import_Export_Agent_Code", "Population_Code", "Number_of_Family_Members", "Manufacturing_Indicator")
 
 merge_Data$Manufacturing_Indicator <- as.factor(merge_Data$Manufacturing_Indicator)
+
 
 merge_Data_subset <- subset(merge_Data, select = model_Variables)
 
 merge_Data_subset <- merge_Data_subset %>% mutate_all(na_if, "")
+
+model_data$Company_Creation_Date <- as.character(model_data$Company_Creation_Date)
+
+model_data$Company_Creation_Date <- dmy_hms(model_data$Company_Creation_Date)
+
+merge_Data_subset <- merge_Data_subset %>% 
+  mutate(BEMFAB__Marketability_ = case_when(
+    BEMFAB__Marketability_ == "M" ~ "Matched, Full Marketing",
+    BEMFAB__Marketability_ == "N" ~ "Unmatched",
+    BEMFAB__Marketability_ == "X" ~ "Matched, Non Marketing",
+    BEMFAB__Marketability_ == "A" ~ "Undeliverable",
+    BEMFAB__Marketability_ == "O" ~ "Out of Business",
+    BEMFAB__Marketability_ == "S" ~ "Undetermined SIC",
+    BEMFAB__Marketability_ == "D" ~ "Delisted Record"
+
+  )
+)
+
 
 merge_Data_subset <- merge_Data_subset %>% 
   mutate(Legal_Status_Code = case_when(
@@ -111,6 +126,13 @@ merge_Data_subset <- merge_Data_subset %>%
     Population_Code == 7 ~ "100,000_to_249,999",
     Population_Code == 8 ~ "250,000_to_499,999",
     Population_Code == 9 ~ "500,000_and_over"
+  )
+)
+
+merge_Data_subset <- merge_Data_subset %>% 
+  mutate(Manufacturing_Indicator = case_when(
+    Manufacturing_Indicator == 0 ~ "Y",
+    Manufacturing_Indicator == 1 ~ "N"
   )
 )
 
