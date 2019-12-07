@@ -43,7 +43,7 @@ registerDoParallel(cl)
 
 
 
-```{r Model dataset}
+```{r Model variable processing}
 
 model_data <- read.csv("Model Dataset for Students.csv")
 
@@ -62,57 +62,65 @@ model_data$Company_Creation_Date <- dmy_hms(model_data$Company_Creation_Date)
 
 merge_Data <- merge(model_data, firm_Data, by.x = 'Company_Number', by.y = 'Company_Number')
 
-model_Variables <- c("Business_Code", "Location_Type", "churned", "total_products", "total_transactions", "total_accounts", "total_revenue", "total_usage", "Employee_Count_Total", "Company_Number", "Public_Private_Indicator", "Small_Business_Indicator", "Minority_Owned_Indicator", "Major_Industry_Category_Name")
+model_Variables <- c("Business_Code", "Location_Type", "churned", "total_products", "total_transactions", "total_accounts", "total_revenue", "total_usage", "Employee_Count_Total", "Company_Number", "Public_Private_Indicator", "Major_Industry_Category_Name", "Legal_Status_Code", "Import_Export_Agent_Code", "Population_Code", "Number_of_Family_Members", "Manufacturing_Indicator")
+
+merge_Data$Manufacturing_Indicator <- as.factor(merge_Data$Manufacturing_Indicator)
 
 merge_Data_subset <- subset(merge_Data, select = model_Variables)
 
 merge_Data_subset <- merge_Data_subset %>% mutate_all(na_if, "")
 
+merge_Data_subset <- merge_Data_subset %>% 
+  mutate(Legal_Status_Code = case_when(
+    Legal_Status_Code == 3 ~ "corporation",
+    Legal_Status_Code == 8 ~ "joint_venture",
+    Legal_Status_Code == 12 ~ "partnership_of_unknown_type",
+    Legal_Status_Code == 13 ~ "proprietorship",
+    Legal_Status_Code == 50 ~ "government_body",
+    Legal_Status_Code == 100 ~ "cooperative",
+    Legal_Status_Code == 101 ~ "non_profit_organization",
+    Legal_Status_Code == 118 ~ "local_government_body",
+    Legal_Status_Code == 120 ~ "foreign company",
+    TRUE ~ "Other"
+  )
+)
+
+merge_Data_subset <- merge_Data_subset %>% 
+  mutate(Import_Export_Agent_Code = case_when(
+    Import_Export_Agent_Code == "A" ~ "Import/Export/Agent",
+    Import_Export_Agent_Code == "B" ~ "Imports_&_Exports",
+    Import_Export_Agent_Code == "C" ~ "Imports",
+    Import_Export_Agent_Code == "D" ~ "Imports_&_Agent",
+    Import_Export_Agent_Code == "E" ~ "Exports_&_Agent",
+    Import_Export_Agent_Code == "F" ~ "Agent",
+    Import_Export_Agent_Code == "G" ~ " None_or_Not_Available",
+    Import_Export_Agent_Code == "H" ~ "Exports",
+    TRUE ~ "None or Not Available"
+  )
+)
+
+merge_Data_subset <- merge_Data_subset %>% 
+  mutate(Population_Code = case_when(
+    Population_Code == 0 ~ "Under_1,000",
+    Population_Code == 1 ~ "1,000_to_2,499",
+    Population_Code == 2 ~ "2,500_to_4,999",
+    Population_Code == 3 ~ "5,000_to_9,999",
+    Population_Code == 4 ~ "10,000_to_24,999",
+    Population_Code == 5 ~ "25,000_to_49,999",
+    Population_Code == 6 ~ "50,000_to_99,999",
+    Population_Code == 7 ~ "100,000_to_249,999",
+    Population_Code == 8 ~ "250,000_to_499,999",
+    Population_Code == 9 ~ "500,000_and_over"
+  )
+)
 
 
-# Create intervals for Company_Creation_Date 
-# Start_90s = as.Date('1990-01-01')
-# End_90s = as.Date('1999-12-31')
+names(merge_Data_subset) <- make.names(names(merge_Data_subset))
 
-# Start_2000s_1stHalf = as.Date('2000-01-01')
-# End_2000s_1stHalf = as.Date('2004-12-31')
+```
 
-# Start_2000s_2ndHalf = as.Date('2005-01-01')
-# End_2000s_2ndHalf = as.Date('2009-12-31')
+```{r Model dataset imput missing values}
 
-# Start_2010s_1stHalf = as.Date('2010-01-01')
-# End_2010s_1stHalf = as.Date('2014-12-31')
-
-# Start_2010s_2ndHalf = as.Date('2015-01-01')
-# End_2010s_2ndHalf = as.Date('2019-12-31')
-
-# Create new column for Creation_Date periods
-# model_data$CreationDatePeriods = lapply(model_data$Company_Creation_Date, FUN = function(x){
-#           
-#  if(is.na(x)){
-#    return(NA)
-#  }else if(Start_90s <= x & x <= End_90s){
-#    return("90s")
-#  }else if(Start_2000s_1stHalf <= x & x <= End_2000s_1stHalf){
-#    return("2000 - 2004")
-#  }else if(Start_2000s_2ndHalf <= x & x <= End_2000s_2ndHalf){
-#    return("2005 - 2009")
-#  }else if(Start_2010s_1stHalf <= x & x <= End_2010s_1stHalf){
-#    return("2010 - 2014")
-#  }else if(Start_2010s_2ndHalf <= x & x <= End_2010s_2ndHalf){
-#    return("2015 - 2019")
-#  }else{
-#    return(NA)
-#    }
-#})
-
-
-# Convert returned list of characters to factor
-#model_data$CreationDatePeriods <- unlist(model_data$CreationDatePeriods)
-
-#model_data$CreationDatePeriods <- as.factor(model_data$CreationDatePeriods)
-
-#model_data$CreationDatePeriods <- addNA(model_data$CreationDatePeriods, ifany = TRUE)
 
 merge_Data_subset_NUM <- merge_Data_subset %>% select_if(is.numeric)
 
@@ -125,7 +133,7 @@ for(Var in colnames(merge_Data_subset_nonNUM)) {
   
 }
 
-(high_Correlation <- findCorrelation(cor(merge_Data_subset_NUM)))
+#(high_Correlation <- findCorrelation(cor(merge_Data_subset_NUM)))
 
 
 # Use preProcess to imput missing values using KNN model, **May automatically apply centering and scaling?

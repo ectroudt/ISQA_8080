@@ -32,7 +32,7 @@ str(dataset)
 summary(dataset)
 target_var <- "churned"
 
-model_form <- churned ~ . -Company_Number
+model_form <- churned ~ Business_Code + Major_Industry_Category_Name + Population_Code + total_transactions + Manufacturing_Indicator + Number_of_Family_Members + Legal_Status_Code + total_revenue
 model_type <- 'svmRadial'
 
 positive_class <- 'Yes'
@@ -55,11 +55,11 @@ data_test <- dataset[-trainIndex,]
 ```{r Part 1 - svm Radial model with C parameter tuning}
 
 
-trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary, search = 'grid')
+trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE, classProbs = TRUE, summaryFunction = twoClassSummary, search = 'grid', sampling = 'smote')
 
 tGrid <- expand.grid(C = c(0.001, 0.01, 0.1, 1,5,10), sigma = c(1/nrow(data_train), 0.0001, 0.001, 0.01, 0.1, 0.5))
 
-SVM_Radial_CTune <- train(as.formula(model_form), data = dataset, method = model_type, trControl = trControl, tuneGrid = tGrid, metric = 'ROC', preProc = c("center", "scale"))
+SVM_Radial_CTune <- train(as.formula(model_form), data = dataset, method = model_type, trControl = trControl, tuneGrid = tGrid, metric = 'ROC')
 
 SVM_Radial_CTune$finalModel
 

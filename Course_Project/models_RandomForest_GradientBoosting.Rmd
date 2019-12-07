@@ -22,12 +22,8 @@ registerDoParallel(cl)
 ```{r load and process data}
 
 
-dataset <- read.csv("model_data_bagImputed.csv")
+dataset <- model_data_bagImputed
 
-dataset$CreationDatePeriods <- addNA(dataset$CreationDatePeriods, ifany = TRUE)
-
-str(dataset)
-summary(dataset)
 target_var <- "churned"
 
 model_form <- churned ~ .
@@ -53,7 +49,6 @@ data_test <- dataset[-trainIndex,]
 ##_Random forest training/test data_
 
 ```{r Random Forest model}
-
 
 rf_tree_churn <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl, metric = 'ROC', tuneGrid = data.frame(mtry = 3))
 
