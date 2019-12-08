@@ -33,11 +33,6 @@ tryCatch({
 # set knitr options
 knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
 
-# configure doParallel
-num_cores <- detectCores() #note: you can specify a smaller number if you want
-cl <- makePSOCKcluster(num_cores)
-registerDoParallel(cl)
-
 
 ```
 
@@ -164,36 +159,14 @@ imputed_model_Data <- predict(pre_Imputed_model_Data, merge_Data_subset_NUM)
 
 
 model_data_bagImputed<- cbind(merge_Data_subset_nonNUM, imputed_model_Data)
+model_data_bagImputed <- subset(model_data_bagImputed, select = -c(Company_Creation_Date))
 
-chrned_Data <- subset(merge_Data, merge_Data[,"churned"] == "Yes")
+chrned_Data <- subset(model_data_bagImputed, model_data_bagImputed[,"churned"] == "Yes")
 
-
-summary(model_data_bagImputed)
-
-ggpairs(model_data_bagImputed)
-
-ggpairs(model_data_bagImputed, columns = c(3, 1), aes(color = churned))
-ggpairs(model_data_bagImputed, columns = c(3, 2), aes(color = churned))
-ggpairs(model_data_bagImputed, columns = c(3, 4), aes(color = churned))
-ggpairs(model_data_bagImputed, columns = c(3, 5), aes(color = churned))
-ggpairs(model_data_bagImputed, columns = c(3, 6), aes(color = churned))
-ggpairs(model_data_bagImputed, columns = c(3, 7), aes(color = churned))
-ggpairs(model_data_bagImputed, columns = c(3, 8), aes(color = churned))
-ggpairs(model_data_bagImputed, columns = c(3, 9), aes(color = churned))
-ggpairs(model_data_bagImputed, columns = c(3, 10), aes(color = churned))
-ggpairs(model_data_bagImputed, columns = c(3, 11), aes(color = churned))
-ggpairs(model_data_bagImputed, columns = c(3, 12), aes(color = churned))
-ggpairs(model_data_bagImputed, columns = c(3, 13), aes(color = churned))
-ggpairs(model_data_bagImputed, columns = c(3, 14), aes(color = churned))
 
 
 write.csv(model_data_bagImputed, file = "model_data_bagImputed.csv")
 
 ```
 
-```{r stop cluster}
 
-# we should close / stop the parallel clusters once we're done
-stopImplicitCluster()
-
-```
