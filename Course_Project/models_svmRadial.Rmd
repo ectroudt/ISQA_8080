@@ -15,8 +15,8 @@ tryCatch({
   }, error=function(cond){message(paste("cannot change working directory"))
 })
 
-num_cores <- detectCores(8) #note: you can specify a smaller number if you want
-registerDoParallel(num_cores)
+num_cores <- detectCores(10) #note: you can specify a smaller number if you want
+registerDoParallel(10)
 
 ```
 
@@ -32,7 +32,7 @@ str(dataset)
 summary(dataset)
 target_var <- "churned"
 
-model_form <- churned ~ Business_Code + Major_Industry_Category_Name + Population_Code + total_transactions + Manufacturing_Indicator + Number_of_Family_Members + Legal_Status_Code + total_revenue
+model_form <- churned ~ Business_Code + Major_Industry_Category_Name + Population_Code + total_transactions 
 model_type <- 'svmRadial'
 
 positive_class <- 'Yes'
@@ -77,7 +77,7 @@ CTune_Radial_pred_raw <- SVM_Radial_CTune  %>% predict(newdata = data_test, type
 CTune_Radial_pred_probs <- SVM_Radial_CTune  %>% predict(newdata = data_test, type = 'prob')
 
 # evaluate performance
-confusionMatrix(cancer_Data_CTune_Radial_pred_raw, cancer_data_test[[target_var]], positive = positive_class)
+confusionMatrix(CTune_Radial_pred_raw, data_test[[target_var]], positive = positive_class)
 
 roc(cancer_data_test[[target_var]], cancer_Data_CTune_Radial_pred_probs[ , positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
 

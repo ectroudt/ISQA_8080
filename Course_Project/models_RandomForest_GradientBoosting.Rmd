@@ -11,9 +11,8 @@ tryCatch({
   }, error=function(cond){message(paste("cannot change working directory"))
 })
 
-num_cores <- detectCores() #note: you can specify a smaller number if you want
-cl <- makePSOCKcluster(num_cores)
-registerDoParallel(cl)
+
+registerDoParallel(10)
 
 ```
 
@@ -26,7 +25,8 @@ dataset <- model_data_bagImputed
 
 target_var <- "churned"
 
-model_form <- churned ~ .
+model_form <- churned ~ Business_Code + total_transactions + total_revenue + total_usage + total_products + total_accounts + Employee_Count_Total + Number_of_Family_Members -Company_Number 
+
 model_type <- 'rf'
 
 positive_class <- 'Yes'
@@ -80,15 +80,30 @@ roc(data_test[[target_var]], rf_tree_churn_pred_probs[ , positive_class], plot =
 
 model_type <- 'xgbTree'
 
+trControl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE, classProbs = TRUE, search = 'grid', sampling = 'smote')
+
+tGrid <- expand.grid(nrounds = seq(10,100,10),
+                   max_depth = c(1, 3, 5, 7),
+                   eta = c(0.001,0.01,0.1),
+                   gamma = c(0),
+                   colsample_bytree = c(1),
+                   min_child_weight = c(1),
+                   subsample = c(1))
+
 xgb_churn_tree <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl, metric = 'ROC')
 
-# get training data predictions
+
+xgb_churn_tree$finalModel
+
+
 xgb_churn_tree_predictions <- xgb_churn_tree$pred
 
 # evaluate predictions
 confusionMatrix(xgb_churn_tree_predictions$pred, xgb_churn_tree_predictions$obs)
 
 roc(xgb_churn_tree_predictions$obs, xgb_churn_tree_predictions$Yes, plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
+
+first_plot <- varImp(xgb_churn_tree)
 
 # predict performance on test data
 xgb_churn_tree_pred_raw <- xgb_churn_tree %>% predict(newdata = data_test, type = 'raw')
