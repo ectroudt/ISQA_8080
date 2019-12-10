@@ -1,0 +1,79 @@
+---
+title: "Testset_Data_Cleaning"
+author: "Eric Troudt"
+date: "December 9, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r set options}
+
+# set wd
+tryCatch({
+  setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+  }, error=function(cond){message(paste("cannot change working directory"))
+})
+
+
+# set knitr options
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
+
+
+```
+
+
+
+```{r Model variable processing}
+
+test_Data <- read.csv("Test Dataset for Students.csv")
+
+
+firm_Data <- read.csv("Firmographic Data for Students.csv")
+
+#test_Data$churned <- as.factor(test_Data$churned)
+
+#test_Data <- test_Data %>% mutate(churned, churned = recode(churned, '0' = 'No', '1' = 'Yes'))
+
+#test_Data[["churned"]] <-relevel(test_Data[["churned"]], "Yes")
+
+merge_test_Data <- merge(test_Data, firm_Data, by.x = 'Company_Number', by.y = 'Company_Number')
+
+model_Variables <- c("Business_Code.x", "total_products", "total_transactions", "total_accounts", "total_revenue", "total_usage", "Employee_Count_Total", "Company_Number", "Number_of_Family_Members")
+
+
+merge_test_Data_subset <- subset(merge_test_Data, select = model_Variables)
+
+merge_test_Data_subset <- merge_test_Data_subset %>% mutate_all(na_if, "")
+
+names(merge_test_Data_subset)[names(merge_test_Data_subset) == "Business_Code.x"] <- "Business_Code"
+
+names(merge_test_Data_subset) <- make.names(names(merge_test_Data_subset))
+
+```
+
+```{r Model dataset imput missing values}
+
+
+merge_test_Data_subset_NUM <- merge_test_Data_subset %>% select_if(is.numeric)
+
+merge_test_Data_subset_nonNUM <- merge_test_Data_subset %>% select_if(~!is.numeric(.x))
+
+for(Var in colnames(merge_test_Data_subset_nonNUM)) {
+  
+  merge_test_Data_subset_nonNUM[[Var]] <- addNA(merge_test_Data_subset_nonNUM[[Var]], ifany = TRUE)
+  merge_test_Data_subset_nonNUM[[Var]] <- droplevels(merge_test_Data_subset_nonNUM[[Var]])
+  
+}
+
+
+imputed_real_test_Data <- predict(pre_Imputed_model_Data, merge_test_Data_subset_NUM)
+
+
+real_test_Data_bagImputed<- cbind(merge_test_Data_subset_nonNUM, imputed_real_test_Data)
+
+```

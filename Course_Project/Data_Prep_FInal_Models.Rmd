@@ -1,18 +1,143 @@
 ---
-title: "ISQA 8080 - Course Project - Random forest, Gradient boosting models"
+title: "Data_preparation_Final_Model"
+author: "Eric Troudt and Jonathan Prosser"
+date: "December 10, 2019"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
 
+```{r Libraries and WD}
+
+# --- install and load all libraries needed for the different classification models ---
+
+## ** the glmnet package requires R 3.6.1, make sure it is installed
+
+load.lib<-c("Hmisc", "e1071", "caret","GGally","lubridate","RANN",
+"tidyverse", "pROC", "doParallel", "rpart", "rpart.plot", 
+"randomForest", "xgboost", "kernlab", "glmnet", "DMwR")
+
+install.lib<-load.lib[!load.lib %in% installed.packages()]
+
+for(lib in install.lib) install.packages(lib,dependencies=TRUE)
+
+sapply(load.lib,require,character=TRUE)
+
+# set wd
 tryCatch({
   setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
   }, error=function(cond){message(paste("cannot change working directory"))
 })
 
+# set knitr options
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
+
 num_cores <- detectCores()
 registerDoParallel(num_cores)
+
+
+```
+
+
+
+```{r Model variable processing}
+
+# read in model data
+model_data <- read.csv("Model Dataset for Students.csv")
+
+# are all company numbers unique? 
+length(unique(model_data$Company_Number))
+
+# read in firmographic data
+firm_Data <- read.csv("Firmographic Data for Students.csv")
+
+# relevel/recode churned variable
+model_data$churned <- as.factor(model_data$churned)
+
+model_data <- model_data %>% mutate(churned, churned = recode(churned, '0' = 'No', '1' = 'Yes'))
+
+model_data[["churned"]] <-relevel(model_data[["churned"]], "Yes")
+
+# How many records are shared between model data and firmographic data
+common_CompanyNums <- intersect(model_data$Company_Number, firm_Data$Company_Number)
+print(common_CompanyNums)
+
+# merge model data and firmographic data on company number
+merge_Data <- merge(model_data, firm_Data, by.x = 'Company_Number', by.y = 'Company_Number')
+
+model_Variables <- c("Business_Code", "churned", "total_products", "total_transactions", "total_accounts", "total_revenue", "total_usage", "Employee_Count_Total", "Company_Number", "Number_of_Family_Members")
+
+merge_Data_subset <- subset(merge_Data, select = model_Variables)
+
+merge_Data_subset <- merge_Data_subset %>% mutate_all(na_if, "")
+
+names(merge_Data_subset) <- make.names(names(merge_Data_subset))
+
+```
+
+```{r Model dataset imput missing values}
+
+
+merge_Data_subset_NUM <- merge_Data_subset %>% select_if(is.numeric)
+
+merge_Data_subset_nonNUM <- merge_Data_subset %>% select_if(~!is.numeric(.x))
+
+for(Var in colnames(merge_Data_subset_nonNUM)) {
+  
+  merge_Data_subset_nonNUM[[Var]] <- addNA(merge_Data_subset_nonNUM[[Var]], ifany = TRUE)
+  merge_Data_subset_nonNUM[[Var]] <- droplevels(merge_Data_subset_nonNUM[[Var]])
+  
+}
+
+(high_Correlation <- findCorrelation(cor(merge_Data_subset_NUM), cutoff = .7))
+
+
+# Use preProcess to imput missing values using KNN model, **Apply centering and scaling
+pre_Imputed_model_Data <- preProcess(merge_Data_subset_NUM, method = c("bagImpute", "scale", "center"))
+imputed_model_Data <- predict(pre_Imputed_model_Data, merge_Data_subset_NUM)
+
+
+model_data_bagImputed<- cbind(merge_Data_subset_nonNUM, imputed_model_Data)
+model_data_bagImputed <- subset(model_data_bagImputed, select = -c(Company_Creation_Date))
+
+```
+
+
+
+```{r Test dataset}
+
+# read in test dataset
+test_Data <- read.csv("Test Dataset for Students.csv")
+
+merge_test_Data <- merge(test_Data, firm_Data, by.x = 'Company_Number', by.y = 'Company_Number')
+
+# merge with firmographic data on variables selected for final model
+model_Variables <- c("Business_Code.x", "total_products", "total_transactions", "total_accounts", "total_revenue", "total_usage", "Employee_Count_Total", "Company_Number", "Number_of_Family_Members")
+merge_test_Data_subset <- subset(merge_test_Data, select = model_Variables)
+
+merge_test_Data_subset <- merge_test_Data_subset %>% mutate_all(na_if, "")
+
+names(merge_test_Data_subset)[names(merge_test_Data_subset) == "Business_Code.x"] <- "Business_Code"
+
+names(merge_test_Data_subset) <- make.names(names(merge_test_Data_subset))
+
+
+merge_test_Data_subset_NUM <- merge_test_Data_subset %>% select_if(is.numeric)
+
+merge_test_Data_subset_nonNUM <- merge_test_Data_subset %>% select_if(~!is.numeric(.x))
+
+# add NAs as levels to nonNumeric variables
+for(Var in colnames(merge_test_Data_subset_nonNUM)) {
+  
+  merge_test_Data_subset_nonNUM[[Var]] <- addNA(merge_test_Data_subset_nonNUM[[Var]], ifany = TRUE)
+  merge_test_Data_subset_nonNUM[[Var]] <- droplevels(merge_test_Data_subset_nonNUM[[Var]])
+  
+}
+
+# center, scale, and imput missing values in test dataset using imputed prePcross object from model (training) data
+imputed_real_test_Data <- predict(pre_Imputed_model_Data, merge_test_Data_subset_NUM)
+
+real_test_Data_bagImputed<- cbind(merge_test_Data_subset_nonNUM, imputed_real_test_Data)
+
 
 ```
 
@@ -25,7 +150,7 @@ dataset <- model_data_bagImputed
 
 target_var <- "churned"
 
-model_form <- churned ~ Business_Code + total_transactions + total_revenue + total_usage + total_products + total_accounts + Employee_Count_Total + Number_of_Family_Members -Company_Number 
+model_form <- churned ~ . -Company_Number 
 
 model_type <- 'rf'
 
@@ -45,8 +170,7 @@ data_test <- dataset[-trainIndex,]
 
 ```
 
-
-##_Random forest training/test data_
+###_Random forest training/test data_
 
 ```{r Random Forest model}
 
@@ -70,11 +194,9 @@ confusionMatrix(rf_tree_churn_pred_raw, data_test[[target_var]], positive = posi
 roc(data_test[[target_var]], rf_tree_churn_pred_probs[ , positive_class], plot = TRUE, print.auc = TRUE, legacy.axes = TRUE, levels = c(negative_class, positive_class))$auc
 
 
-
 ```
 
-
-##_Gradient boosting training/test data_
+###_Gradient boosting training/test data_
 
 ```{r Gradient boosting model}
 
@@ -142,14 +264,5 @@ write.csv("final_predictions_test_Dataset.csv", x = real_test_Data_bagImputed)
 
 
 
-
-```
-
-
-
-```{r stop cluster}
-
-# we should close / stop the parallel clusters once we're done
-stopImplicitCluster()
 
 ```

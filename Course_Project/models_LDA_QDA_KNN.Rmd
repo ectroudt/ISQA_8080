@@ -22,7 +22,7 @@ registerDoParallel(cl)
 ```{r load and process data}
 
 
-dataset <- read.csv("model_data_bagImputed.csv")
+dataset <- model_data_bagImputed
 
 dataset$CreationDatePeriods <- addNA(dataset$CreationDatePeriods, ifany = TRUE)
 
@@ -69,6 +69,9 @@ log_Reg_fit_smote <- train(as.formula(model_form) , data = data_train, method = 
 confusionMatrix(log_Reg_fit, 'average')
 confusionMatrix(log_Reg_fit_smote, 'average')
 
+var_Select <- varImp(log_Reg_fit_smote)
+
+plot(var_Select)
 
 # apply logistic regression fit to test/validation data
 log_Fit_Val_smote_Raw <- log_Reg_fit_smote %>% predict(newdata = data_test, type = 'raw')

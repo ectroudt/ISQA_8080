@@ -40,97 +40,104 @@ knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
 
 ```{r Model variable processing}
 
+# read in model data
 model_data <- read.csv("Model Dataset for Students.csv")
 
+# are all company numbers unique? 
+length(unique(model_data$Company_Number))
 
+# read in firmographic data
 firm_Data <- read.csv("Firmographic Data for Students.csv")
 
+# relevel/recode churned variable
 model_data$churned <- as.factor(model_data$churned)
 
 model_data <- model_data %>% mutate(churned, churned = recode(churned, '0' = 'No', '1' = 'Yes'))
 
 model_data[["churned"]] <-relevel(model_data[["churned"]], "Yes")
 
+# How many records are shared between model data and firmographic data
+common_CompanyNums <- intersect(model_data$Company_Number, firm_Data$Company_Number)
+print(common_CompanyNums)
+
+# merge model data and firmographic data on company number
 merge_Data <- merge(model_data, firm_Data, by.x = 'Company_Number', by.y = 'Company_Number')
 
 model_Variables <- c("Business_Code", "Company_Creation_Date", "BEMFAB__Marketability_", "Location_Type", "churned", "total_products", "total_transactions", "total_accounts", "total_revenue", "total_usage", "Employee_Count_Total", "Company_Number", "Public_Private_Indicator", "Major_Industry_Category_Name", "Legal_Status_Code", "Import_Export_Agent_Code", "Population_Code", "Number_of_Family_Members", "Manufacturing_Indicator")
-
-merge_Data$Manufacturing_Indicator <- as.factor(merge_Data$Manufacturing_Indicator)
-
 
 merge_Data_subset <- subset(merge_Data, select = model_Variables)
 
 merge_Data_subset <- merge_Data_subset %>% mutate_all(na_if, "")
 
-model_data$Company_Creation_Date <- as.character(model_data$Company_Creation_Date)
-
-model_data$Company_Creation_Date <- dmy_hms(model_data$Company_Creation_Date)
-
-merge_Data_subset <- merge_Data_subset %>% 
-  mutate(BEMFAB__Marketability_ = case_when(
-    BEMFAB__Marketability_ == "M" ~ "Matched, Full Marketing",
-    BEMFAB__Marketability_ == "N" ~ "Unmatched",
-    BEMFAB__Marketability_ == "X" ~ "Matched, Non Marketing",
-    BEMFAB__Marketability_ == "A" ~ "Undeliverable",
-    BEMFAB__Marketability_ == "O" ~ "Out of Business",
-    BEMFAB__Marketability_ == "S" ~ "Undetermined SIC",
-    BEMFAB__Marketability_ == "D" ~ "Delisted Record"
-
-  )
-)
-
-
-merge_Data_subset <- merge_Data_subset %>% 
-  mutate(Legal_Status_Code = case_when(
-    Legal_Status_Code == 3 ~ "corporation",
-    Legal_Status_Code == 8 ~ "joint_venture",
-    Legal_Status_Code == 12 ~ "partnership_of_unknown_type",
-    Legal_Status_Code == 13 ~ "proprietorship",
-    Legal_Status_Code == 50 ~ "government_body",
-    Legal_Status_Code == 100 ~ "cooperative",
-    Legal_Status_Code == 101 ~ "non_profit_organization",
-    Legal_Status_Code == 118 ~ "local_government_body",
-    Legal_Status_Code == 120 ~ "foreign company",
-    TRUE ~ "Other"
-  )
-)
-
-merge_Data_subset <- merge_Data_subset %>% 
-  mutate(Import_Export_Agent_Code = case_when(
-    Import_Export_Agent_Code == "A" ~ "Import/Export/Agent",
-    Import_Export_Agent_Code == "B" ~ "Imports_&_Exports",
-    Import_Export_Agent_Code == "C" ~ "Imports",
-    Import_Export_Agent_Code == "D" ~ "Imports_&_Agent",
-    Import_Export_Agent_Code == "E" ~ "Exports_&_Agent",
-    Import_Export_Agent_Code == "F" ~ "Agent",
-    Import_Export_Agent_Code == "G" ~ " None_or_Not_Available",
-    Import_Export_Agent_Code == "H" ~ "Exports",
-    TRUE ~ "None or Not Available"
-  )
-)
-
-merge_Data_subset <- merge_Data_subset %>% 
-  mutate(Population_Code = case_when(
-    Population_Code == 0 ~ "Under_1,000",
-    Population_Code == 1 ~ "1,000_to_2,499",
-    Population_Code == 2 ~ "2,500_to_4,999",
-    Population_Code == 3 ~ "5,000_to_9,999",
-    Population_Code == 4 ~ "10,000_to_24,999",
-    Population_Code == 5 ~ "25,000_to_49,999",
-    Population_Code == 6 ~ "50,000_to_99,999",
-    Population_Code == 7 ~ "100,000_to_249,999",
-    Population_Code == 8 ~ "250,000_to_499,999",
-    Population_Code == 9 ~ "500,000_and_over"
-  )
-)
-
-merge_Data_subset <- merge_Data_subset %>% 
-  mutate(Manufacturing_Indicator = case_when(
-    Manufacturing_Indicator == 0 ~ "Y",
-    Manufacturing_Indicator == 1 ~ "N"
-  )
-)
-
+# model_data$Company_Creation_Date <- as.character(model_data$Company_Creation_Date)
+# 
+# model_data$Company_Creation_Date <- dmy_hms(model_data$Company_Creation_Date)
+# 
+# merge_Data_subset <- merge_Data_subset %>% 
+#   mutate(BEMFAB__Marketability_ = case_when(
+#     BEMFAB__Marketability_ == "M" ~ "Matched, Full Marketing",
+#     BEMFAB__Marketability_ == "N" ~ "Unmatched",
+#     BEMFAB__Marketability_ == "X" ~ "Matched, Non Marketing",
+#     BEMFAB__Marketability_ == "A" ~ "Undeliverable",
+#     BEMFAB__Marketability_ == "O" ~ "Out of Business",
+#     BEMFAB__Marketability_ == "S" ~ "Undetermined SIC",
+#     BEMFAB__Marketability_ == "D" ~ "Delisted Record"
+# 
+#   )
+# )
+# 
+# 
+# merge_Data_subset <- merge_Data_subset %>% 
+#   mutate(Legal_Status_Code = case_when(
+#     Legal_Status_Code == 3 ~ "corporation",
+#     Legal_Status_Code == 8 ~ "joint_venture",
+#     Legal_Status_Code == 12 ~ "partnership_of_unknown_type",
+#     Legal_Status_Code == 13 ~ "proprietorship",
+#     Legal_Status_Code == 50 ~ "government_body",
+#     Legal_Status_Code == 100 ~ "cooperative",
+#     Legal_Status_Code == 101 ~ "non_profit_organization",
+#     Legal_Status_Code == 118 ~ "local_government_body",
+#     Legal_Status_Code == 120 ~ "foreign company",
+#     TRUE ~ "Other"
+#   )
+# )
+# 
+# merge_Data_subset <- merge_Data_subset %>% 
+#   mutate(Import_Export_Agent_Code = case_when(
+#     Import_Export_Agent_Code == "A" ~ "Import/Export/Agent",
+#     Import_Export_Agent_Code == "B" ~ "Imports_&_Exports",
+#     Import_Export_Agent_Code == "C" ~ "Imports",
+#     Import_Export_Agent_Code == "D" ~ "Imports_&_Agent",
+#     Import_Export_Agent_Code == "E" ~ "Exports_&_Agent",
+#     Import_Export_Agent_Code == "F" ~ "Agent",
+#     Import_Export_Agent_Code == "G" ~ " None_or_Not_Available",
+#     Import_Export_Agent_Code == "H" ~ "Exports",
+#     TRUE ~ "None or Not Available"
+#   )
+# )
+# 
+# merge_Data_subset <- merge_Data_subset %>% 
+#   mutate(Population_Code = case_when(
+#     Population_Code == 0 ~ "Under_1,000",
+#     Population_Code == 1 ~ "1,000_to_2,499",
+#     Population_Code == 2 ~ "2,500_to_4,999",
+#     Population_Code == 3 ~ "5,000_to_9,999",
+#     Population_Code == 4 ~ "10,000_to_24,999",
+#     Population_Code == 5 ~ "25,000_to_49,999",
+#     Population_Code == 6 ~ "50,000_to_99,999",
+#     Population_Code == 7 ~ "100,000_to_249,999",
+#     Population_Code == 8 ~ "250,000_to_499,999",
+#     Population_Code == 9 ~ "500,000_and_over"
+#   )
+# )
+# 
+# merge_Data_subset <- merge_Data_subset %>% 
+#   mutate(Manufacturing_Indicator = case_when(
+#     Manufacturing_Indicator == 0 ~ "Y",
+#     Manufacturing_Indicator == 1 ~ "N"
+#   )
+# )
+# 
 
 names(merge_Data_subset) <- make.names(names(merge_Data_subset))
 
@@ -150,10 +157,10 @@ for(Var in colnames(merge_Data_subset_nonNUM)) {
   
 }
 
-#(high_Correlation <- findCorrelation(cor(merge_Data_subset_NUM)))
+(high_Correlation <- findCorrelation(cor(merge_Data_subset_NUM), cutoff = .7))
 
 
-# Use preProcess to imput missing values using KNN model, **May automatically apply centering and scaling?
+# Use preProcess to imput missing values using KNN model, **Apply centering and scaling
 pre_Imputed_model_Data <- preProcess(merge_Data_subset_NUM, method = c("bagImpute", "scale", "center"))
 imputed_model_Data <- predict(pre_Imputed_model_Data, merge_Data_subset_NUM)
 
@@ -161,12 +168,42 @@ imputed_model_Data <- predict(pre_Imputed_model_Data, merge_Data_subset_NUM)
 model_data_bagImputed<- cbind(merge_Data_subset_nonNUM, imputed_model_Data)
 model_data_bagImputed <- subset(model_data_bagImputed, select = -c(Company_Creation_Date))
 
-chrned_Data <- subset(model_data_bagImputed, model_data_bagImputed[,"churned"] == "Yes")
-
-
-
-write.csv(model_data_bagImputed, file = "model_data_bagImputed.csv")
-
 ```
 
+```{r Test dataset}
+
+# read in test dataset
+test_Data <- read.csv("Test Dataset for Students.csv")
+
+merge_test_Data <- merge(test_Data, firm_Data, by.x = 'Company_Number', by.y = 'Company_Number')
+
+# merge with firmographic data on variables selected for final model
+model_Variables <- c("Business_Code.x", "total_products", "total_transactions", "total_accounts", "total_revenue", "total_usage", "Employee_Count_Total", "Company_Number", "Number_of_Family_Members")
+merge_test_Data_subset <- subset(merge_test_Data, select = model_Variables)
+
+merge_test_Data_subset <- merge_test_Data_subset %>% mutate_all(na_if, "")
+
+names(merge_test_Data_subset)[names(merge_test_Data_subset) == "Business_Code.x"] <- "Business_Code"
+
+names(merge_test_Data_subset) <- make.names(names(merge_test_Data_subset))
+
+
+merge_test_Data_subset_NUM <- merge_test_Data_subset %>% select_if(is.numeric)
+
+merge_test_Data_subset_nonNUM <- merge_test_Data_subset %>% select_if(~!is.numeric(.x))
+
+# add NAs as levels to nonNumeric variables
+for(Var in colnames(merge_test_Data_subset_nonNUM)) {
+  
+  merge_test_Data_subset_nonNUM[[Var]] <- addNA(merge_test_Data_subset_nonNUM[[Var]], ifany = TRUE)
+  merge_test_Data_subset_nonNUM[[Var]] <- droplevels(merge_test_Data_subset_nonNUM[[Var]])
+  
+}
+
+# center, scale, adnd imput missing values in test dataset using imputed prePcross object from model (training) data
+imputed_real_test_Data <- predict(pre_Imputed_model_Data, merge_test_Data_subset_NUM)
+
+real_test_Data_bagImputed<- cbind(merge_test_Data_subset_nonNUM, imputed_real_test_Data)
+
+```
 
