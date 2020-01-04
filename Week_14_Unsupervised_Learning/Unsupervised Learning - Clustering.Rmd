@@ -1,0 +1,237 @@
+---
+title: "Unsupervised Learning"
+author: "Dr. Christian Haas"
+date: "November 20, 2019"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Clustering
+
+This section discusses two main unsupervised learning techniques: Clustering, and Dimensionality Reduction. For Clustering, we look at two different types of clustering: k-means clustering with a given number of clusters, and hierarchical clustering that builds clusters bottom-up.
+
+## k-means clustering
+
+K-Means clustering is probably the best known clustering algorithm. For a given number of clusters, we determine which cluster each observation belongs to. The goal is to have clusters who are homogeneous itself, but heterogeneous when compared to other clusters.
+
+```{r k-means}
+# set working directory
+tryCatch({
+  setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+  }, error=function(cond){message(paste("cannot change working directory"))
+})
+
+library(tidyverse)
+
+# first, let's load the util functions
+source("../Week_4_Classification/Utils.R")
+
+# K-Means Clustering
+set.seed(1)
+
+heart <- read_csv("Heart.csv")
+
+data <- prepare_heart(heart)
+
+# also, the euclidian distance used in standard kmeans is not defined for categorical variables. Hence, we only use numerical variables for now
+data_num <- data %>% select_if(is.numeric)
+
+# let's build the k means clustering with k = 2
+k <- 2
+km_heart <- kmeans(data_num, centers = k, nstart = 1)
+
+# we can look at the clusters
+km_heart$cluster
+
+# we can also combine it with the previous data set to do some visualizations
+
+data_cluster = cbind(data, cluster = factor(km_heart$cluster))
+
+library(ggplot2)
+
+ggplot(data_cluster, aes(x = Age, y = Chol, color = cluster)) + geom_point()
+ggplot(data_cluster, aes(x = Age, y = MaxHR, color = cluster)) + geom_point()
+
+library(GGally)
+ggpairs(data_cluster, mapping=aes(colour = cluster))
+
+
+# and calculate the sum of squares 
+km_heart$tot.withinss
+
+# let's compare this to a different cluster size
+# let's build the k means clustering with k = 3
+k <- 3
+km_heart_3 = kmeans(data_num, centers = k, nstart = 1)
+
+data_cluster_3 = cbind(data, cluster = factor(km_heart_3$cluster))
+
+ggplot(data_cluster_3, aes(x = Age, y = Chol, color = cluster)) + geom_point()
+
+# we can also look how the clusters are different from each other
+library(GGally)
+ggpairs(data_cluster_3, mapping=aes(colour = cluster))
+
+# and, we can write a loop to determine a 'good' number of clusters by looking at the sum of squares as a measure of cluster homogeneity
+
+# set the max number of k
+k_max <- 15
+# calculate the within cluster sum of square
+wss <- sapply(1:k_max, function(k){kmeans(data_num, centers = k, nstart=50, iter.max = 15 )$tot.withinss})
+
+# plot it
+wss
+plot(1:k_max, wss,
+     type="b", pch = 19, frame = FALSE, 
+     xlab="Number of clusters K",
+     ylab="Total within-clusters sum of squares")
+
+# here, the largest reduction seems to occur for 2 cluster, but 3 or 4 are also good numbers
+
+# side note 1: if the scales of the different variables are different, then this will affect the clusters that you're getting. Variables with large scales will get more weight in determining the clusters.
+# we can scale the variables first and then build the clusters.
+
+data_standardization <- preProcess(data, method = c('center', 'scale'))
+data_stand <- predict(data_standardization, data)
+
+data_stand_num <- data_stand %>% select_if(is.numeric)
+
+km_heart_scale <- kmeans(data_stand_num, centers = k, nstart = 1)
+
+data_cluster_scale <- cbind(data_stand, cluster = factor(km_heart_scale$cluster))
+
+# with this, we see that cholesterol suddenly does not have a high influence any more
+ggplot(data_cluster_scale, aes(x = Age, y = Chol, color = cluster)) + geom_point()
+
+ggplot(data_cluster_scale, aes(x = Age, y = MaxHR, color = cluster)) + geom_point()
+
+ggpairs(data_cluster_scale, mapping=aes(colour = cluster))
+
+# # side note 2: while it's not recommended, we could create a model matrix of dummy variables for the categorical variables and use this numerical representation to cluster again:
+# 
+km_heart_matrix <- model.matrix(~. , data)
+
+km_heart <- kmeans(km_heart_matrix, centers = k, nstart = 1)
+
+# we can also combine it with the previous data set to do some visualizations
+data_cluster = cbind(data, cluster = factor(km_heart$cluster))
+
+ggplot(data_cluster, aes(x = Age, y = Chol, color = cluster)) + geom_point()
+
+
+```
+
+## Hands-on Session 1
+
+Let's use clustering on the titanic data set.
+
+```{r hands-on1}
+
+library(caret)
+
+titanic <- read_csv("titanic.csv")
+
+data <- prepare_titanic(titanic)
+
+data_standardization <- preProcess(data, method = c('center', 'scale'))
+data_stand <- predict(data_standardization, data)
+
+
+data_num <- data_stand %>% select_if(is.numeric)
+
+k <- 5
+km_titanic <- kmeans(data_num, centers = k, nstart = 1)
+
+# we can look at the clusters
+km_titanic$cluster
+
+
+data_cluster_scale <- cbind(data_num, cluster = factor(km_titanic$cluster))
+
+k_max <- 15
+# calculate the within cluster sum of square
+wss <- sapply(1:k_max, function(k){kmeans(data_num, centers = k, nstart=50, iter.max = 15 )$tot.withinss})
+
+# plot it
+wss
+plot(1:k_max, wss,
+     type="b", pch = 19, frame = FALSE, 
+     xlab="Number of clusters K",
+     ylab="Total within-clusters sum of squares")
+
+
+
+ggpairs(data_cluster_scale, mapping=aes(colour = cluster))
+
+```
+
+
+
+## Hierarchical Clustering
+
+Hierarchical clustering builds the clusters bottom up. Our choice of cutoff will determine the number of clusters that we see. 
+
+In addition, we will try different ways to create the clusters.
+
+```{r hierarchical}
+
+set.seed(1)
+
+heart <- read_csv("Heart.csv")
+
+data <- prepare_heart(heart)
+
+# also, the euclidian distance used in standard kmeans is not defined for categorical variables. Hence, we only use numerical variables for now
+data_num <- data %>% select_if(is.numeric)
+
+data_sample <- data_num %>% sample_n(40)
+
+# let's calculate the distance matrices first. We need them for the calculation of the clusters
+
+hc_complete <- hclust(dist(data_sample), method = "complete")
+hc_average <- hclust(dist(data_sample), method = "average")
+hc_single <- hclust(dist(data_sample), method = "single")
+
+dendro_complete <- as.dendrogram(hc_complete)
+plot(dendro_complete)
+
+par(mfrow = c(1,3))
+plot(hc_complete, main = "Complete Linkage", xlab = "", sub = "", cex = .9)
+plot(hc_average, main = "Average Linkage", xlab = "", sub = "", cex = .9)
+plot(hc_single, main="Single Linkage", xlab="", sub="", cex=.9)
+
+# we can also cut the tree to have a certain number of clusters
+# for this, let's use the entire data set
+hc_complete <- hclust(dist(data_num), method = "complete")
+hc_average <- hclust(dist(data_num), method = "average")
+hc_single <- hclust(dist(data_num), method = "single")
+
+num_cluster <- 5
+cluster_complete <- cutree(hc_complete, num_cluster)
+cluster_average <- cutree(hc_average, num_cluster)
+cluster_single <- cutree(hc_single, num_cluster)
+
+# compare the clusters with respect to commonalities
+heart_hc = cbind(data_num, factor(cluster_complete), factor(cluster_average), factor(cluster_single))
+
+summary(heart_hc)
+
+library(GGally)
+ggpairs(heart_hc, mapping=aes(colour = cluster_complete))
+
+
+# side note: inversion
+inversion <- read_csv("Inversion.csv")
+hc_centroid <- hclust(dist(inversion), method='centroid')
+plot(hc_centroid)
+
+dendro_centroid <- as.dendrogram(hc_centroid)
+plot(dendro_centroid)
+
+```
+

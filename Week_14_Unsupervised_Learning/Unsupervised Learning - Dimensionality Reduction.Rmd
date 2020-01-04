@@ -1,0 +1,143 @@
+---
+title: "Unsupervised Learning - Dimensionality Reduction"
+author: "Dr. Christian Haas"
+date: "November 26, 2019"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Dimensionality Reduction
+
+Now, let's look at some basic dimensionality reduction code. 
+
+```{r DimensionalityReduction}
+# set your working directory to the current file directory 
+tryCatch({
+  setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+  }, error=function(cond){message(paste("cannot change working directory"))
+})
+
+# we use the Arrest dataset for this
+library(ISLR)
+data <- USArrests
+
+(states <- row.names(data))
+
+# get some initial statistics
+names(data)
+sapply(data, mean)
+sapply(data, var)
+
+library(GGally)
+ggpairs(data)
+
+# let's build the principal component analysis
+pr_out <- prcomp(data, scale = TRUE)
+
+names(pr_out)
+
+# the factor/component loadings are stored in the rotation
+pr_out$rotation
+
+# let's visualize it
+biplot(pr_out, scale = 0)
+
+# the variance explained by each component can be obtained through the standard deviation
+pr_out$sdev
+(pr_var <- pr_out$sdev^2)
+(pve <- pr_var/sum(pr_var))
+
+plot(pve, xlab = "Principal Component", ylab = "Proportion of Variance Explained", ylim = c(0,1), type = 'b')
+
+plot(cumsum(pve), xlab="Principal Component", ylab="Cumulative Proportion of Variance Explained", ylim=c(0,1),type='b')
+
+```
+
+
+## Putting it all together: PCA and Clustering on Genomic Data
+
+```{r}
+# The NCI60 data
+
+library(ISLR)
+
+# The NCI60 data is a dataset of gene expression levels for 64 cancer cell lines. Simply put, we have 64 observations (coming from different cancer types), and each observation has the measurement for 6830 genes. We want to see what results PCA and clustering will yield with respect to similarity of the different cancers.
+
+# the labs data contains the cancer type of the 64 observations
+nci_labs <- NCI60$labs
+# the data-data contains the actual measurements
+nci_data <- NCI60$data
+# we can see that we have a large matrix of measurements. note that n << p in this case!
+dim(nci_data)
+
+# overview of frequency of cancer types
+table(nci_labs)
+
+
+# Let's build a PCA on the NCI60 Data
+
+pr_nci <- prcomp(nci_data, scale = TRUE)
+
+# the following function colors each cancer type differently
+Cols = function(vec){
+  cols = rainbow(length(unique(vec)))
+  return(cols[as.numeric(as.factor(vec))])
+}
+
+# plot the first three principal components
+par(mfrow = c(1,2))
+plot(pr_nci$x[,1:2], col = Cols(nci_labs), pch = 19, xlab = "Z1", ylab = "Z2")
+plot(pr_nci$x[,c(1,3)], col = Cols(nci_labs), pch = 19, xlab = "Z1", ylab = "Z3")
+# we see that similar cancer types tend to have similar values with respect to the first, second, and third principal component
+
+# check the explained variance progression 
+summary(pr_nci)
+
+pve = 100 * pr.nci$sdev^2 / sum(pr.nci$sdev^2)
+
+par(mfrow = c(1,2))
+plot(pve,  type = "o", ylab = "PVE", xlab = "Principal Component", col = "blue") # here, the 'elbow' appears to be either 7 or 8 components
+plot(cumsum(pve), type = "o", ylab = "Cumulative PVE", xlab = "Principal Component", col = "brown3") 
+
+
+# Then, let's use Clustering the Observations of the NCI60 Data
+
+# scale the data first (not absolutely necessary)
+sd_data = scale(nci_data)
+
+# plot the different hierarchical clusters
+par(mfrow = c(1,3))
+data_dist <- dist(sd_data)
+plot(hclust(data_dist), labels = nci_labs, main = "Complete Linkage", xlab = "", sub = "", ylab = "")
+plot(hclust(data_dist, method = "average"), labels = nci_labs, main = "Average Linkage", xlab = "", sub = "", ylab = "")
+plot(hclust(data_dist, method = "single"), labels = nci_labs,  main = "Single Linkage", xlab = "", sub = "", ylab = "")
+# note that average and complete linkage yields more balanced clusters
+
+# let's see which clusters we get if we want to have 4 clusters
+hc_out <- hclust(dist(sd_data))
+hc_clusters = cutree(hc_out, 4)
+# in which do the cancer types fall into? 
+table(hc_clusters, nci_labs)
+
+# let's plot the complete linkage clustering with 4 clusters
+par(mfrow = c(1,1))
+plot(hc_out, labels = nci_labs)
+abline(h = 139, col = "red")
+
+
+# and finally, let's compare it to a k means clustering! we also set k = 4 here for a better comparison
+# we build the model and then compare the clusters that we are getting with the previous hierarchical clustering
+
+km_out <- kmeans(sd_data, centers = 4, nstart = 20)
+km_clusters <- km_out$cluster
+table(km_clusters, hc_clusters) # we see some overlap, but also differences!
+table(km_clusters, nci_labs)
+
+```
+
+

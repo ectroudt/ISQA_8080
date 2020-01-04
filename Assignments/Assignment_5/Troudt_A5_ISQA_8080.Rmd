@@ -1,0 +1,340 @@
+---
+title: "Troudt_A5_ISQA_8080"
+author: "Eric Troudt"
+date: "December 17, 2019"
+output: html_document
+---
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
+
+library(doParallel)
+library(caret)
+library(tidyverse)
+library(splines)
+library(reshape2)
+
+tryCatch({
+  setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+  }, error=function(cond){message(paste("cannot change working directory"))
+})
+
+
+num_cores <- detectCores() #note: you can specify a smaller number if you want
+cl <- makePSOCKcluster(num_cores)
+registerDoParallel(cl)
+
+```
+
+## PART 1
+
+**a.** Global functions will fit the entire set of observations,and therefore that single function will be used for predicting all values of yi (from i to n). In contrast, step functions can provide separate fits for each of the corresponding segments (bins) of any given set of observations, which can be highly flexible with less variance when compared with a global function that fits at that same level of flexibility.  
+ 
+**b.** Regression splines are regression-based fits of the individual segments (the textbook describes cubic splines, which appear to be the most common) that are smoothed at each of the knots by imposing additional constraints of continuity at the 1st and 2nd order derivatives (for cubic). The number of knots and their corresponding placements within the range of X allow for more flexible fits of areas in the dataset that are more variable. Conversely, smoothing splines are forms of natural splines in which each individual observation is a knot. To prevent the extreme over-fitting of the data that would otherwise result from using knots at each observation, smoothing splines are constrained by an additional penalty term imposed on its measure of overall smoothness, which effectively shrinks the coefficient estimates based on the value of the penalty function’s tuning parameter. This ‘shrinking’ of the coefficient estimates to account for the bias-variance trade-off is what makes smoothing splines conceptually similar to the Ridge and LASSO regression approaches.  
+
+**c.** The scatterplot of the dataset below shows that the relationship between x and y is clearly non-linear from a global perspective. If the data are binned into 3 equal segments, then the 1st and 3rd bins are linear while the middle bin is not.
+
+
+```{r Part 1 - data load}
+
+dataset <- read.csv("Problem1.csv")
+
+
+# split data 70% train
+set.seed(sample(45121038))
+trainIndex <- createDataPartition(dataset[['y']], p = 0.7, list = FALSE)
+
+data_train <- dataset[trainIndex,]
+data_test <- dataset[-trainIndex,]
+
+
+#  general scatterplot of training data
+dataset %>% ggplot(aes(x = x, y = y)) + geom_point()
+
+
+```
+
+### _Linear Model_
+
+**d.** Based on the results of the linear model on the test below, the amount of variability captured by the linear model is not very high (~ 36%), and indicates what we can clearly see from plotting the dataset, namely that there is a nonlinear relationship that cannot be efficiently captured with simple linear regression.
+
+```{r Part 1 linear model}
+
+model_type <- "lm"
+model_form <- y ~ x
+
+trControl <- trainControl(method = 'cv', savePredictions = TRUE)
+
+lm_model <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl)
+summary(lm_model)
+
+lm_test_pred <- lm_model %>% predict(newdata = data_test)
+
+(lm_test_rmse <- postResample(pred = lm_test_pred, obs = data_test[['y']]))
+
+```
+
+### _Polynomial Regression Model_
+
+**e.** Based on the results of the polynomial regression model on the training/test below, the amount of variability captured by the polynomial model is much higher (~ 85%), and the RMSE is about half of what is was with the linear model.
+
+```{r Part 1 - polynomial regr model}
+
+#change model form to polynomial regression
+model_form <- y ~ poly(x, 4, raw = TRUE) 
+
+lm_poly_model <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl)
+summary(lm_model)
+
+data_train %>% ggplot(aes(x = x, y = y)) + geom_point() + geom_smooth(method = 'lm', formula = y ~ poly(x, 4, raw = T))
+
+lm_poly_test_pred <- lm_poly_model %>% predict(newdata = data_test)
+
+(lm_poly_test_rmse <- postResample(pred = lm_poly_test_pred, obs = data_test[['y']]))
+
+
+```
+
+### _Natural Spline Model_
+
+**f.** Based on the results of the natural spline model on the training/test below, the amount of variability captured by the natural spline model is almost perfect (99%), and the RMSE is about 1/5 of what is was with the polynomial regression model.
+
+```{r Part 1 - nautral spline}
+
+# change model to natural spline
+model_form <- y ~ ns(x, df = 10) 
+model_type <- "lm"
+
+natural_spline_fit <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl)
+
+natural_spline_test_pred <- natural_spline_fit %>% predict(newdata = data_test)
+
+data_train %>% ggplot(aes(x = x, y = y)) + geom_point() + geom_smooth(method = 'lm', formula = y ~ ns(x, df = 10))
+
+(natural_spline_test_rmse <- postResample(natural_spline_test_pred, obs = data_test[['y']]))
+
+```
+
+
+**g.** Based on the results of the local regression model below, there is better performance when the span is 0.2 compared with when it's set to 05: the RMSE ratio is 2.1 vs 6.9, and the Rsquared is 99% vs 97%. Additionally, the natural cubic spline performs better (in terms of both RMSE and Rsquared) than the local regression model with span = 0.5, and just slightly under performs on RMSE (3.2 versus 2.1) compared with the local regression model with span 0.2.
+
+### _Local Regression Model_
+
+```{r Part 1 - local regression model}
+
+model_form <- y ~ x
+local_regr_model <- loess(as.formula(model_form), span = .2, data = data_train)
+local_regr_model_2 <- loess(as.formula(model_form), span = .5, data = data_train)
+
+local_regr_model_test_pred <- local_regr_model %>% predict(newdata = data_test)
+local_regr_model_2_test_pred <- local_regr_model_2 %>% predict(newdata = data_test)
+
+print("RMSE for local regression with span 0.2")
+(local_regr_model_rmse_test <- postResample(pred = local_regr_model_test_pred, obs = data_test[['y']]))
+
+print("RMSE for local regression with span 0.5")
+(local_regr_model_2_rmse_test <- postResample(pred = local_regr_model_2_test_pred, obs = data_test[['y']]))
+
+
+
+# in this case, we again have a ggplot for visualization
+data_train %>% ggplot(aes(x = x, y = y)) + geom_point() + geom_smooth(method = 'loess', formula = y ~ x, span = 0.2) + geom_smooth(method = 'loess', formula = y ~ x, span = 0.5, color = 'red') + geom_smooth(method = 'lm', formula = y ~ x, color = 'green') 
+
+```
+
+## PART 2 Clustering 1
+
+**a.** Initial Cluster Assignments
+
+```{r Part 2 - Data creation/scatterplot}
+
+Data_Obs <- data.frame(Observation=seq(1,5, by = 1), X1=seq(0, 4, by = 1), X2=c(5, 5, 3, 2, 0))
+
+Data_Obs$RawVal <- runif(5)
+
+Data_Obs <- Data_Obs %>% mutate(Cluster = ifelse(RawVal >= 0.5, 2, 1))
+Data_Obs$Cluster <- as.factor(Data_Obs$Cluster)
+
+Data_Obs %>% ggplot(aes(x = X1, y = X2, color = Cluster)) + geom_point()
+
+
+```
+
+**b.** Initial Cluster Centroids
+
+```{r Part 2 - Centroids}
+
+Cluster_1_Vals <- Data_Obs %>% filter(Cluster == 1) %>% select(X1, X2)
+Cluster_2_Vals <- Data_Obs %>% filter(Cluster == 2) %>% select(X1, X2)
+
+Cluster_1_Cent <- c(round(mean(Cluster_1_Vals$X1), 5), round(mean(Cluster_1_Vals$X2), 5))
+Cluster_2_Cent <- c(round(mean(Cluster_2_Vals$X1), 5), round(mean(Cluster_2_Vals$X2), 5))
+
+sprintf("Cluster 1 centroid: X1 = %s, X2=%s", Cluster_1_Cent[1], Cluster_1_Cent[2])
+sprintf("Cluster 2 centroid: X1 = %s, X2=%s", Cluster_2_Cent[1], Cluster_2_Cent[2])
+
+
+```
+
+
+**c.** New Cluster Assignments
+
+```{r Part 2 - Squared Euclidean distances}
+
+# Function for calculating Squared euclidean distance
+Euc_Dist <- function(X1, X2, Cent) {
+  
+  SumDist <- ((X1 - Cent[1])^2) + ((X2 -Cent[2])^2)
+
+  
+}
+
+opt <- FALSE
+iteration <- 1
+
+while(!opt) {
+
+  
+  Data_Obs <- Data_Obs %>% mutate(Cluster_2 = ifelse(Euc_Dist(X1, X2, Cluster_1_Cent) >= Euc_Dist(X1, X2, Cluster_2_Cent), 2, 1))
+  
+  print(paste0("New Cluster Values for iteration: ", iteration))
+  print(Data_Obs[['Cluster_2']])
+  
+  
+  if(nrow(Data_Obs[which(Data_Obs$Cluster == Data_Obs$Cluster_2), ]) == 5) {
+    
+    opt = TRUE
+    
+  } 
+  
+  else {
+    
+    Data_Obs$Cluster <- Data_Obs$Cluster_2
+    Data_Obs$Cluster_2 <- NA
+    
+    Cluster_1_Vals <- Data_Obs %>% filter(Cluster == 1) %>% select(X1, X2)
+    Cluster_2_Vals <- Data_Obs %>% filter(Cluster == 2) %>% select(X1, X2)
+    
+    
+    Cluster_1_Cent <- c(round(mean(Cluster_1_Vals$X1), 5), round(mean(Cluster_1_Vals$X2), 5))
+    Cluster_2_Cent <- c(round(mean(Cluster_2_Vals$X1), 5), round(mean(Cluster_2_Vals$X2), 5))
+    
+    iteration <- iteration + 1
+    
+  }
+  
+}
+
+
+ 
+```
+```{r Part 2 - Final Cluster Scatterplot}
+
+Data_Obs$Cluster <- as.factor(Data_Obs$Cluster)
+
+Data_Obs %>% ggplot(aes(x = X1, y = X2, color = Cluster)) + geom_point()
+
+
+```
+
+
+## PART 2 Clustering 2
+
+**a** Based off the scree plot below, the elbow seems to occur around 5, after which the additional within-cluster variation contributed by more clusters is not significant. 
+
+
+```{r Part 2 - k-means with Scree plot}
+
+data <- read_csv("CustomerData.csv")
+
+# standardize the data
+data_standardization <- preProcess(data, method = c('center', 'scale'))
+data_stand <- predict(data_standardization, data)
+
+data_stand_num <- data_stand %>% select_if(is.numeric)
+
+# set max number of clusters
+k_max <- 15
+
+# calculate the within cluster sum of square
+wss <- sapply(1:k_max, function(k){kmeans(data_stand_num, centers = k, nstart=50, iter.max = 15 )$tot.withinss})
+
+# plot it
+plot(1:k_max, wss,
+     type="b", pch = 19, frame = FALSE, 
+     xlab="Number of clusters K",
+     ylab="Total within-clusters sum of squares")
+
+
+
+```
+
+**b.** Based off the ggpairs plot below, strong clusters are observed for many of the pairwise comparisons between of Fresh products and Detergents/Paper (Detergents_Paper vs Frozen, Fresh vs Grocery, etc.). Cluster 3 appears to be over-represented in region A, which may also indicate particular spending preferences for types of product based on region.
+
+```{r Cluster Visualization}
+
+k <- 5
+km_Cluster <- kmeans(data_stand_num, centers = k, nstart = 1)
+
+
+data_cluster_Comb <- cbind(data, cluster = factor(km_Cluster$cluster))
+
+library(GGally)
+
+ggpairs(data_cluster_Comb, mapping=aes(colour = cluster))
+
+```
+
+**c.** Based on the summary of the clusters for the two different linkage methods, single linkage is less balanced, with single observations comprising 4 out of the 5 clusters, which is consistent with the drawback of single linkage described in the textbook.
+
+```{r Part 2 - Hierarchical clustering}
+
+hc_complete <- hclust(dist(data_stand_num), method = "complete")
+hc_single <- hclust(dist(data_stand_num), method = "single")
+
+num_cluster <- 5
+
+cluster_complete <- cutree(hc_complete, num_cluster)
+cluster_single <- cutree(hc_single, num_cluster)
+
+# compare the clusters of the different linkages
+cluster_summary_hc = cbind(data_stand_num, factor(cluster_complete), factor(cluster_single))
+
+summary(cluster_summary_hc)
+
+
+```
+
+**d.** Based on the summary of the clusters below for the two different linkage methods, single linkage is still not balanced, with single observations comprising 3 out of the 5 clusters (another cluster only consisted of two observations). The complete linkage method benefitted much more from outlier removal, displaying greater balance among its 5 clusters.
+
+```{r Part 2 - Hierarchical clustering with no outliers}
+
+data_NoOutliers <- read_csv("CustomerData_OutlierRemoved.csv")
+
+data_NoOutliers_standardization <- preProcess(data_NoOutliers, method = c('center', 'scale'))
+data_NoOutliers_stand <- predict(data_NoOutliers_standardization, data_NoOutliers)
+
+data_NoOutliers_stand_num <- data_NoOutliers_stand %>% select_if(is.numeric)
+
+hc_NoOutliers_complete <- hclust(dist(data_NoOutliers_stand_num), method = "complete")
+hc_NoOutliers_single <- hclust(dist(data_NoOutliers_stand_num), method = "single")
+
+num_cluster <- 5
+
+cluster_NoOutliers_complete <- cutree(hc_NoOutliers_complete, num_cluster)
+cluster_NoOutliers_single <- cutree(hc_NoOutliers_single, num_cluster)
+
+# compare the clusters of the different linkages
+cluster_NoOutliers_summary_hc = cbind(data_NoOutliers_stand_num, factor(cluster_NoOutliers_complete), factor(cluster_NoOutliers_single))
+
+summary(cluster_NoOutliers_summary_hc)
+
+
+```
+
+```{r stop clusters}
+
+stopImplicitCluster()
+
+```
+

@@ -1,0 +1,341 @@
+---
+title: "Non-linear Models"
+author: "Dr. Christian Haas"
+date: "August 27, 2019"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Non-linear Models
+
+This section covers some methods to include non-linear relationships in (mostly regression) models. Note that we will not consider resampling here, but the concepts can be easily extended to building a model on a training set and evaluate it on the test set (see e.g. the previous chapter for this).
+
+## Polynomial Regression and Step Functions
+
+We will use the Wage dataset to model non-linear relationships between Age and Wage. We'll start with the two basic types of non-linear models: Polynomial Regression, and Step Functions.
+
+```{r polynomial}
+
+# load data in memory
+library(ISLR)
+library(ggplot2)
+library(caret)
+library(tidyverse)
+
+# load the data into memory
+dataset <- Wage
+
+summary(dataset)
+
+# we will focus on two variables at first: y = wage, and x = age
+
+# let's look at the general scatterplot first
+dataset %>% ggplot(aes(x = age, y = wage)) + geom_point()
+
+# how would a linear regression look like?
+dataset %>% ggplot(aes(x = age, y = wage)) + geom_point() + geom_smooth(method = 'lm')
+
+set.seed(1)
+
+target_var <- 'wage'
+# let's do a basic training-test split
+trainIndex <- createDataPartition(dataset[[target_var]], p = 0.8, list = FALSE)
+data_train <- dataset[trainIndex,]
+data_test <- dataset[-trainIndex,]
+
+# note: the specific resampling method is not the focus of this chapter, so you can change this
+trControl <- trainControl(method = 'cv', savePredictions = TRUE)
+
+# note: we can specify the formula like this. if you specify individual predictors, they have to match the column names in the dataset
+model_form <- wage ~ poly(age, 4, raw = TRUE) 
+model_type <- "lm"
+
+lm_poly <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl)
+summary(lm_poly)
+
+# and predict the wage for certain age points
+# for the training set, we can get the predictions from the $pred object:
+lm_poly_train_pred <- lm_poly$pred$pred
+
+# for the test set, we can get the predictions for each year as well
+lm_poly_test_pred <- lm_poly %>% predict(newdata = data_test)
+
+# we can use ggplot to plot it
+data_train %>% ggplot(aes(x = age, y = wage)) + geom_point() + geom_smooth(method = 'lm', formula = y ~ poly(x, 4, raw = T))
+
+# finally, calculate the train and test RMSEs
+(lm_poly_train_rmse <- postResample(pred = lm_poly_train_pred, obs = lm_poly$pred$obs))
+(lm_poly_test_rmse <- postResample(pred = lm_poly_test_pred, obs = data_test[[target_var]]))
+
+
+## Step Functions ##
+# in order to use the step function, we need to create the cutpoints / bins first
+
+# k is the number of bins, i.e,. cutpoints + 1
+k <- 4
+
+# look at the table for k bins
+table(cut(dataset$age, k))
+
+# then, we can create these steps in the data. they will be effectively handled as factor levels
+wage_data_step <- dataset %>% mutate(age_step = cut(age, k))
+set.seed(1)
+# let's do a basic training-test split
+trainIndex <- createDataPartition(wage_data_step[[target_var]], p = 0.8, list = FALSE)
+wage_data_step_train <- wage_data_step[trainIndex,]
+wage_data_step_test <- wage_data_step[-trainIndex,]
+
+# create the simple step function regression; unfortunately we need to include the k parameter manually for this to work
+model_form <- wage ~ age_step
+step_lm <- train(as.formula(model_form), data = wage_data_step_train, method = model_type, trControl = trControl)
+
+# note that we get three different coefficients as we have 4 bins
+summary(step_lm)
+
+# we can use ggplot
+wage_data_step_train %>% ggplot(aes(x = age, y = wage)) + geom_point() + geom_smooth(method = 'lm', formula = y ~ cut(x, 4))
+
+
+# and predict the wage for certain steps
+# for the training set, we can get the predictions from the $pred object:
+step_lm_train_pred <- step_lm$pred$pred
+
+# for the test set, we can get the predictions for each year as well
+step_lm_test_pred <- step_lm %>% predict(newdata = wage_data_step_test)
+
+# finally, calculate the train and test RMSEs
+(step_lm_train_rmse <- postResample(pred = step_lm_train_pred, obs = step_lm$pred$obs))
+(step_lm_test_rmse <- postResample(pred = step_lm_test_pred, obs = wage_data_step_test[[target_var]]))
+
+```
+
+## Splines
+
+Splines are generalizations of the step functions, where we can fit non-linear functions on each bin. With additional constraints, we can ensure that the overall prediction function is continuous and also, if possible, smooth.
+
+```{r splines}
+# we need to load the library splines for this
+library(splines)
+library(ISLR)
+library(caret)
+library(tidyverse)
+
+dataset <- Wage
+
+target_var <- 'wage'
+# let's do a basic training-test split
+trainIndex <- createDataPartition(dataset[[target_var]], p = 0.8, list = FALSE)
+data_train <- dataset[trainIndex,]
+data_test <- dataset[-trainIndex,]
+
+# the splines library works within regular lm() functions. 
+# it uses the bs() method to define the number and location of cutoff points
+# here, we create a spline with 3 cutpoints, i.e., 4 bins
+# note that the default degree of bs() is 3, i.e., it creates cubic splines
+model_form <- wage ~ bs(age, knots = c(25, 40, 60), degree = 3) 
+model_type <- "lm"
+
+trControl <- trainControl(method = 'cv', savePredictions = TRUE)
+
+spline_fit <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl)
+
+spline_train_pred <- spline_fit$pred$pred
+spline_test_pred <- predict(spline_fit, newdata = data_test)
+
+(spline_rmse_train <- postResample(pred = spline_train_pred, obs = spline_fit$pred$obs))
+(spline_rmse_test <- postResample(pred = spline_test_pred, obs = data_test[[target_var]]))
+
+# we can use ggplot to display the predictions as well
+data_train %>% ggplot(aes(x = age, y = wage)) + geom_point() + geom_smooth(method = 'lm', formula = y ~ bs(x, knots = c(25,40,60)))
+
+# let's compare this to a linear spline
+data_train %>% ggplot(aes(x = age, y = wage)) + geom_point() + geom_smooth(method = 'lm', formula = y ~ bs(x, knots = c(25,40,60), degree = 1))
+
+## In addition to splines, we can also use natural splines with the ns() function instead of bs()
+# remember that we have k degrees of freedom for k basis functions
+model_form <- wage ~ ns(age, df = 4)
+nspline_fit <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl)
+nspline_fit
+
+nspline_train_pred <- nspline_fit$pred$pred
+nspline_test_pred <- predict(nspline_fit, newdata = data_test)
+
+(nspline_rmse_train <- postResample(pred = nspline_train_pred, obs = nspline_fit$pred$obs))
+(nspline_rmse_test <- postResample(pred = nspline_test_pred, obs = data_test[[target_var]]))
+
+data_train %>% ggplot(aes(x = age, y = wage)) + geom_point() + geom_smooth(method = 'lm', formula = y ~ ns(x, df = 4))
+
+# SMOOTHING SPLINE
+# we can also fit a smoothing spline. note: unfortunately there's no caret support for this particular method
+
+model_type <- 'gamSpline' # for smoothing splines
+model_form <- wage ~ age
+trControl <- trainControl(method = 'cv', savePredictions = TRUE)
+tGrid <- expand.grid(df = seq(1,16,0.5))
+
+smoothing_fit <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl, tuneGrid = tGrid)
+smoothing_fit
+
+smoothing_train_pred <- smoothing_fit$pred$pred
+smoothing_test_pred <- predict(smoothing_fit, newdata = data_test)
+
+(smoothing_rmse_train <- postResample(pred = smoothing_train_pred, obs = smoothing_fit$pred$obs))
+(smoothing_rmse_test <- postResample(pred = smoothing_test_pred, obs = data_test[[target_var]]))
+
+
+# And finally, let's try local linear regression! 
+# note: unfortunately the gam package has an unresolved bug, hence we use the loess() function for this
+# the span determines how many nearest neighbors are used for estimation
+model_form <- wage ~ age
+fit_local <- loess(as.formula(model_form), span = .2, data = data_train)
+fit_local_2 <- loess(as.formula(model_form), span = .5, data = data_train)
+
+fit_local_test_pred <- fit_local %>% predict(newdata = data_test)
+fit_local_2_test_pred <- fit_local_2 %>% predict(newdata = data_test)
+(local_rmse_test <- postResample(pred = fit_local_test_pred, obs = data_test[[target_var]]))
+(local_2_rmse_test <- postResample(pred = fit_local_2_test_pred, obs = data_test[[target_var]]))
+
+# in this case, we again have a ggplot for visualization
+data_train %>% ggplot(aes(x = age, y = wage)) + geom_point() + geom_smooth(method = 'loess', formula = y ~ x, span = 0.2) + geom_smooth(method = 'loess', formula = y ~ x, span = 0.5, color = 'red')
+
+```
+
+## Hands-on Session 1
+
+Use the College.csv data set to create a polynomial regression, a natural splines model, and a local regression model. Use Enroll as y variable, and PhD as x variable.
+
+Use a baisc train test split and evaluate the RMSE on the test set. 
+
+```{r hands-on1}
+# set your working directory to the current file directory 
+tryCatch({
+  setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+  }, error=function(cond){message(paste("cannot change working directory"))
+})
+
+college <- read.csv("College.csv")
+
+college <- na.omit(college)
+
+dataset <- college
+
+# do not consider the first column
+college <- college %>% select(-c("X"))
+
+target_var <- 'Enroll'
+
+trainIndex <- createDataPartition(dataset[[target_var]], p = 0.8, list = FALSE)
+data_train <- dataset[trainIndex,]
+data_test <- dataset[-trainIndex,]
+
+
+model_form <- Enroll ~ bs(PhD, knots = c(62, 75, 85), degree = 3) 
+model_type <- "lm"
+
+trControl <- trainControl(method = 'cv', savePredictions = TRUE)
+
+spline_fit <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl)
+
+spline_train_pred <- spline_fit$pred$pred
+spline_test_pred <- predict(spline_fit, newdata = data_test)
+
+(spline_rmse_train <- postResample(pred = spline_train_pred, obs = spline_fit$pred$obs))
+(spline_rmse_test <- postResample(pred = spline_test_pred, obs = data_test[[target_var]]))
+
+
+model_form <- Enroll ~ bs(PhD, degree = 4) 
+nspline_fit <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl)
+nspline_fit
+
+nspline_train_pred <- nspline_fit$pred$pred
+nspline_test_pred <- predict(nspline_fit, newdata = data_test)
+
+(nspline_rmse_train <- postResample(pred = nspline_train_pred, obs = nspline_fit$pred$obs))
+(nspline_rmse_test <- postResample(pred = nspline_test_pred, obs = data_test[[target_var]]))
+
+
+
+model_type <- 'gamSpline' # for smoothing splines
+model_form <- Enroll ~ PhD
+trControl <- trainControl(method = 'cv', savePredictions = TRUE)
+tGrid <- expand.grid(df = seq(1,16,0.5))
+
+smoothing_fit <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl, tuneGrid = tGrid)
+smoothing_fit
+
+smoothing_train_pred <- smoothing_fit$pred$pred
+smoothing_test_pred <- predict(smoothing_fit, newdata = data_test)
+
+(smoothing_rmse_train <- postResample(pred = smoothing_train_pred, obs = smoothing_fit$pred$obs))
+(smoothing_rmse_test <- postResample(pred = smoothing_test_pred, obs = data_test[[target_var]]))
+
+
+
+
+college %>% ggplot(aes(x = PhD, y = Enroll)) + geom_point() + geom_smooth(method = 'lm', formula = y ~ ns(x, df=3)) + geom_smooth(method = "lm", color = "red") + geom_smooth(method = 'loess', color = "black")
+
+# let's do a basic training-test split
+
+# let's start by fitting a polynomial of size 4
+
+# the natural splines model
+
+# the local regression
+
+# then, predict the test set and calculate the RMSEs on the test set
+
+
+```
+
+## General Additive Models (GAMs)
+And finally, if we want to extend the concept of non-linear regression to multiple regression, we can use the general additive models (GAMs).
+
+This dataset is actually a good use case of what happens if the observations have non-conforming values which we need to address before R runs properly.
+
+```{r gams}
+# for the most general fit, we will use the gam package directly
+library(gam)
+library(ISLR)
+library(tidyverse)
+library(caret)
+# detach("package:mgcv", unload=TRUE) # note: we need to unload another gam-related package as it could cause error messages when loaded together with gam
+
+dataset <- Wage
+
+## note: if you want to use gam within the caret package, at the moment it doesn't allow you to specify individual splines in the formula, it rather uses cross validation to find an appropriate fit for each variable (which can be convenient)
+# another note: the wage dataset is an example where you have to recode some factors levels before you can use caret, otherwise it will throw error messages as it apparently cannot handle empty spaces in factor level names 
+
+# the make.names function is an easy fix as it converts all factor levels to R readable format (it's not pretty, though...)
+dataset <- dataset %>% mutate_if(is.factor, make.names)
+
+
+target_var <- 'wage'
+model_form <- wage ~ year + age + education
+model_type  <- 'gamSpline'
+
+set.seed(1)
+# let's do a basic training-test split
+trainIndex <- createDataPartition(dataset[[target_var]], p = 0.8, list = FALSE)
+data_train <- dataset[trainIndex,]
+data_test <- dataset[-trainIndex,]
+
+trControl<- trainControl(method = 'cv')
+gam_opt <- train(as.formula(model_form), data = data_train, method = model_type, trControl = trControl)
+summary(gam_opt) # looks like age should be a spline of degree 3
+
+# compare it against a manually defined model
+gam_m2 <- gam(wage ~ s(year, 4) + s(age, 5) + education, data = data_train)
+
+# calculate the test set predictions
+gam_opt_pred <- gam_opt %>% predict(newdata = data_test, type = 'raw')
+gam_m2_pred <- gam_m2 %>% predict(newdata = data_test, type = 'response')
+
+(result_gam_opt <- postResample(pred = gam_opt_pred, obs = data_test[[target_var]]))
+(result_gam_m2 <- postResample(pred = gam_m2_pred, obs = data_test[[target_var]]))
+
+```
